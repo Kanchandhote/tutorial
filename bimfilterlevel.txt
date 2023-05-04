@@ -1,0 +1,75 @@
+####urls.py######
+router.register(r'filters', BIMFilterViewSet, basename='bim_filters')
+
+
+###viewset.py#########
+
+@extend_schema(
+        summary=_("List Kairnial BIM Levels Filters"),
+        description=_("List Kairnial BIM Levels Filters on this project"),
+        parameters=project_parameters + pagination_parameters,
+        responses={200: BIMLevelFilterSerializer, 503: ServiceErrorSerializer},
+        tags=['bim', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, model_id: str):
+        """
+        List BIM Filter levels son a project
+        :param request:
+        :param client_id: Client ID token
+        :param model_id: Model RGOC ID
+        :return:
+        """
+        bim_levels_filter = BIMFilter.list_of_filter_levels(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            model_id=model_id,
+        )
+        serializer = BIMLevelFilterSerializer(data=bim_levels_filter, many=True)
+        return Response(data=serializer.data)
+
+
+#######models.py##############
+@staticmethod
+    def list_of_filter_levels(
+            client_id: str,
+            token: str,
+            project_id: str,
+            model_id: str,
+            user_id: str = None
+
+    ):
+        """
+        List Of All BIM Filter Levels
+        """
+        kbf = KairnialBIMFilterService(client_id=client_id, token=token, project_id=project_id,
+                                       user_id=user_id)
+        return kbf.list_of_filter_levels(model_id=model_id)
+
+
+##################services.py##############
+    def list_of_filter_levels(self, model_id: str, values: str):
+        """
+        List Of All Bim Filter Levels
+        :param model_id: ID of Model ID
+        :param values: values of Bim Levels Filter
+        :return:
+        """
+        return self.call(action='getLevelsFilter', parameters=[{'model_id': model_id, 'values': values}])
+
+
+#############Serializers.py############3
+class BIMLevelFilterSerializer(serializers.Serializer):
+    id = serializers.IntegerField(
+        label=_('Model ID'),
+        help_text=_('Model ID of the BIM Filter Level'),
+        read_only=True,
+        source='model_id'
+    )
+    value = serializers.CharField(
+        label=_('value'),
+        help_text=_('Value'),
+        required=False
+    )

@@ -1,0 +1,116 @@
+1> Urls.py
+#url:
+router.register(r'approvals/(?P<approval_id>[^/.]+)/reviewer', ApprovalsReviewerViewSet, basename='approvals_reviewer')
+
+
+2>Approvals.py
+#ViewSet
+
+class ApprovalsReviewerViewSet(PaginatedViewSet):
+    """
+    Viewset for Approvals Reviewers
+    """
+
+    @extend_schema(
+        summary=_("Archive Kairnial reviewers approval "),
+        description=_("Archive Kairnial reviewers approvals "),
+        parameters=project_parameters + [
+            OpenApiParameter(name='approval_id', type=OpenApiTypes.INT, location='path',
+                             description=_("Numeric Approvals ID")),
+
+            OpenApiParameter(name='index', type=OpenApiTypes.INT, location='query',
+                             description=_("Numeric Index"), required=True ),
+        ],
+
+        responses={204: OpenApiTypes.STR, 404: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['dms/approvals', ],
+        methods=["DELETE"]
+    )
+    @handle_ws_error
+    def destroy(self, request: TokenRequest, client_id: str, project_id: str, approval_id:int,
+                pk):
+        """
+         Archive Approval Reviewer
+        :param request: HTTPRequest
+        :param client_id: ID of the client
+        :param project_id: Project RGOC
+        :param approval_id: Numeric approval ID
+        :param pk: reviewer ID
+
+        """
+        index = request.GET.get('index')
+
+        Approval.archive_reviewer(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            approval_id=approval_id,
+            reviewer_id=pk,
+            index=index,
+        )
+
+        return Response(data='Approval reviewer deleted successfully', status=status.HTTP_204_NO_CONTENT)
+
+3>Models.py
+#write method
+
+@staticmethod
+    def archive_reviewer(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            approval_id=int,
+            reviewer_id=int,
+            index=int,
+    ):
+        """
+        Delete a Note from Kairnial Document
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param approval_id: Numeric approval ID
+        :param reviewer_id: Numeric reviewer ID
+        :param index: numeric index
+        """
+        ds = KairnialDocumentCommentService(client_id=client_id, token=token, project_id=project_id, user_id=user_id)
+
+        return ds.archive_reviewer(
+            approval_id=approval_id,
+            reviewer_id=reviewer_id,
+            index=index,
+        )
+
+4>Documents\services.py
+
+
+    def archive_reviewer(self, approval_id: int, reviewer_id: int, index: int):
+        """
+        archive Approval reviewer
+        :param approval_id: numeric approval ID
+        :param reviewer_id: numeric reviewer ID
+        :param index: numeric index
+        """
+        return self.call(
+            action='archiveViseur',
+            service='fichiers',
+            parameters=[{'idCircuit': reviewer_id, 'index': index, 'noteId': approval_id}]
+        )
+
+5>Test.py
+#write Test Case
+
+ def test_archive_approval_reviewer(self):
+        """
+        Test Delete Approval reviewer
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.delete("dms/approvals/1/reviewer/1/?index=1")
+
+        self.assertEqual(resp.status_code, 204)

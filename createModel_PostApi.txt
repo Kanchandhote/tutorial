@@ -1,0 +1,132 @@
+#dynamics_apis.bim.urls.py
+
+router.register(r'models', BIMModelViewSet, basename='bim_models')
+
+1#viewset.py 
+@extend_schema(
+        summary=_("Kairnial Create BIM Model "),
+        description=("Kairnial Create BIM Model"),
+        parameters=project_parameters,
+        request=BIMCreateModelRequestSerializer,
+        responses={201: BIMCreateModelResponseSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/models', ],
+        methods=["POST"]
+    )
+    @handle_ws_error
+    def create(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+         Create Kairnial BIM Model
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        bcmrs = BIMCreateModelRequestSerializer(data=request.data)
+        if not bcmrs.is_valid():
+            return Response(bcmrs.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        create_model_data = BIMModel.create_model(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            data=bcmrs.validated_data
+        )
+        if not create_model_data:
+            return Response(_("Unable to create model"), status=status.HTTP_400_BAD_REQUEST)
+
+        response_serializer = BIMCreateModelResponseSerializer(create_model_data)
+        return Response(data=response_serializer.data, status=status.HTTP_201_CREATED)
+
+2#Models.py 
+#class BIMmodel()
+@staticmethod
+    def create_model(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str,
+            data: dict
+    ):
+        """
+         create BIM  model
+        """
+        kbs = KairnialBIMModelService(client_id=client_id, token=token, project_id=project_id, user_id=user_id)
+        return kbs.create_model(data)
+
+3#Services.py.KairnialBIMModelService
+ def create_model(self, data: dict = None):
+        """
+        Create Model
+        :param data: Serialized BIMCreateModelRequestSerializer
+        :return:
+        """
+        return self.call(service='bim', action='createModel', parameters=[data])
+
+4#serializer.py
+class BIMCreateModelRequestSerializer(serializers.Serializer):
+    """
+    Request Serializer for BIM Create Model
+    """
+    name = serializers.CharField(
+        label=_('name'),
+        help_text=_('Name for Model')
+    )
+
+
+class BIMCreateModelResponseSerializer(serializers.Serializer):
+    """
+      Response Serializer for BIM CreateModel
+    """
+    name = serializers.CharField(
+        label=_('name'),
+        help_text=_('name for a model')
+    )
+    id = serializers.IntegerField(
+        label=_('id'),
+        help_text=_('Numeric Representation of Level  ID'),
+        read_only=True
+    )
+    user_id = serializers.UUIDField(
+        label=_('user_id'),
+        help_text=_('UUID Representation of User ID'),
+        read_only=True,
+        source="user_uuid"
+    )
+
+    private = serializers.BooleanField(
+        label=_('Private layer'),
+        help_text=_('Is the layer private. Access is limited'),
+        read_only=True
+    )
+    archived = serializers.BooleanField(
+        label=_('archived'),
+        help_text=_('Is Archived?'),
+        read_only=True,
+        source="archive"
+    )
+    creation_time = serializers.CharField(
+        label=_("creation_time"),
+        help_text=_("Creation Time of Level"),
+        read_only=True
+    )
+    update_time = serializers.CharField(
+        label=_("update_time"),
+        help_text=_("Update Time of Level"),
+        read_only=True
+    )
+
+5#test.py
+    def test_bim_create_model(self):
+        """
+        Test Create BIM Model
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.post('bim/models/', data={'name': 'Test Model'})
+        self.assertEqual(resp.status_code, 201)

@@ -1,0 +1,2822 @@
+"""
+Serializers for Kairnial BIM module
+"""
+import json
+
+from django.utils.translation import gettext as _
+from rest_framework import serializers
+
+from kl_common.serializers import CastingDateTimeField, CastingDateField
+from dynamics_apis.users.serializers.users import UserInfoSerializer
+
+
+class LandmarkSerializer(serializers.Serializer):
+    transformation = serializers.ListSerializer(
+        label=_('model transformation'),
+        help_text=_('Transformation matrix applied to model'),
+        child=serializers.FloatField(),
+        read_only=True,
+        source='toModelTransform'
+    )
+    scale = serializers.FloatField(
+        label=_('Scale'),
+        help_text=_('unit to meter ratio'),
+        source='unitToMeter',
+        read_only=True
+    )
+
+
+class BIMCategoriesSerializer(serializers.Serializer):
+    """
+    Serializer for a BIM category
+    """
+    id = serializers.UUIDField(
+        label=_('Category ID'),
+        help_text=_('UUID of the category'),
+        read_only=True
+    )
+    name = serializers.CharField(
+        label=_('Category name'),
+        help_text=_('Text name of the category'),
+        read_only=True,
+        source='label'
+    )
+
+
+class BIMLayerQuerySerializer(serializers.Serializer):
+    """
+    Serializer for BIM layer query
+    """
+    model_uuid = serializers.UUIDField(
+        label=_('Parent model UUID'),
+        help_text=_('UUID field'),
+        required=False
+    )
+    name = serializers.CharField(
+        label=_('Layer name'),
+        help_text=_('Text field'),
+        required=False
+    )
+    label = serializers.CharField(
+        label=_('Layer label'),
+        help_text=_('Human readable name of the layer'),
+        required=False
+    )
+    last_update = CastingDateTimeField(
+        label=_('date of last update'),
+        help_text=_('Datetime ISO format, filters on layers updated strictly after this date'),
+        source='lastUpdate',
+        required=False
+    )
+
+
+class BIMLayerSerializer(serializers.Serializer):
+    """
+    Serializer for BIMLayer
+    """
+    id = serializers.IntegerField(
+        label=_('Layer ID'),
+        help_text=_('Numeric ID of the layer'),
+        read_only=True,
+        source='layers_id'
+    )
+    uuid = serializers.UUIDField(
+        label=_("Layer UUID"),
+        help_text=_('Universal ID of the layer'),
+        read_only=True,
+        source='guid'
+    )
+    name = serializers.CharField(
+        label=_('Layer name'),
+        help_text=_('Text name of the layer'),
+        read_only=True
+    )
+    label = serializers.CharField(
+        label=_('Layer display name'),
+        help_text=_('Human readable name of the layer'),
+        read_only=True
+    )
+    description = serializers.CharField(
+        label=_('Layer description'),
+        help_text=_('Free text description'),
+        source='info',
+        read_only=True
+    )
+    model_id = serializers.IntegerField(
+        label=_('Model ID'),
+        help_text=_('Numeric ID of the parent model'),
+        read_only=True
+    )
+    group_uuid = serializers.UUIDField(
+        label=_('Group UUID'),
+        help_text=_('Universal ID of the group of layers'),
+        read_only=True
+    )
+    version = serializers.IntegerField(
+        label=_('Layer version'),
+        help_text=_('Numeric version of the layer'),
+        read_only=True
+    )
+    file = serializers.UUIDField(
+        label=_('Layer file ID'),
+        help_text=_('File containing the layer'),
+        read_only=True
+    )
+    model_file = serializers.CharField(
+        label=_('Model file ID'),
+        help_text=_('File containing the model'),
+        read_only=True,
+        source='rmodel'
+    )
+    archived = serializers.BooleanField(
+        label=_('Archived'),
+        help_text=_('Is layer archived'),
+        source='archive',
+        default=False,
+        read_only=True
+    )
+    additional_info = serializers.CharField(
+        label=_('Additional info'),
+        help_text=_('Free text additional information'),
+        source='infos',
+        read_only=True
+    )
+    user_id = serializers.IntegerField(
+        label=_('Usir ID'),
+        help_text=_('Numeric ID of the owner'),
+        read_only=True
+    )
+    private = serializers.BooleanField(
+        label=_('Private layer'),
+        help_text=_('Is the layer private. Access is limited'),
+        default=False,
+        read_only=True
+    )
+    bounds = serializers.CharField(  # TODO: Define format of bounds
+        label=_('Layer bounds'),
+        help_text=_('Layer bounding polynom'),
+        read_only=True
+    )
+    landmarks = LandmarkSerializer(
+        label=_('Layer landmarks'),
+        help_text=_('Layer landmarks'),
+        read_only=True
+    )
+    created_at = CastingDateTimeField(
+        label=_('Creation date'),
+        help_text=_('Creation timestamp'),
+        source='creation_date',
+        read_only=True
+    )
+    updated_at = CastingDateTimeField(
+        label=_('Update date'),
+        help_text=_('Update timestamp'),
+        source='modified_date',
+        read_only=True
+    )
+    creator = serializers.CharField(
+        label=_("Creator of the layer"),
+        help_text=_("Creator of the layer"),
+        source='createBy',
+        read_only=True)
+    download_links = serializers.ListSerializer(
+        label=_('Original file link'),
+        help_text=_('Download link to the file'),
+        source='original_file',
+        child=serializers.CharField(),
+        read_only=True
+    )
+
+
+class BIMAreaQuerySerializer(serializers.Serializer):
+    """
+    BIM area input serializer
+    Where we put all fields to filter on
+    """
+    id = serializers.UUIDField(
+        label=_('Area UUID'),
+        help_text=_('UUID text representation as ID of the area'),
+        required=False
+    )
+    plan_id = serializers.UUIDField(
+        label=_('Plan UUID'),
+        help_text=_('UUID text representation as ID of the plan the area belongs to'),
+        required=False
+    )
+
+
+class BIMAreaSerializer(serializers.Serializer):
+    """
+    BIM area output serializer
+    """
+    name = serializers.CharField(
+        label=_('Assembly name'),
+        help_text=_('Name of the assembly'),
+        source='assembly_name',
+        read_only=True
+    )
+    uuid = serializers.UUIDField(
+        label=_('Area UUID'),
+        help_text=_('UUID of the area'),
+        read_only=True
+    )
+    plan_name = serializers.CharField(
+        label=_('Plan name'),
+        help_text=_('Name of the plan hosting the area'),
+        source='name',
+        read_only=True
+    )
+    plan_group = serializers.CharField(
+        label=_('Plan group'),
+        help_text=_('Name of the group of plans of the assembly'),
+        source='group',
+        read_only=True
+    )
+    plan_uuid = serializers.UUIDField(
+        label=_('Plan UUID'),
+        help_text=_('UUID of the plan hosting the area'),
+        source='map_uuid',
+        read_only=True
+    )
+    landmarks = LandmarkSerializer(
+        label=_('Layer landmarks'),
+        help_text=_('Layer landmarks'),
+        read_only=True
+    )
+    label = serializers.CharField(
+        label=_('Assembly display name'),
+        help_text=_('Display name of the assembly'),
+        source='labelArea',
+        read_only=True
+    )
+    level_uuid = serializers.UUIDField(
+        label=_('Level UUID'),
+        help_text=_('UUID of the level hosting the area'),
+        read_only=True
+    )
+    level_name = serializers.CharField(
+        label=_('Level name'),
+        help_text=_('Name of the level'),
+        source='levelName',
+        read_only=True
+    )
+    level_height = serializers.CharField(
+        label=_('Level height'),
+        help_text=_('Height of the level'),
+        source='levelHeight',
+        read_only=True
+    )
+    level_elevation = serializers.CharField(
+        label=_('Level elevation'),
+        help_text=_('Elevation of the level'),
+        source='levelElevation',
+        read_only=True
+    )
+
+
+class BIMElementQuerySerializer(serializers.Serializer):
+    """
+    Serialize BIM elements query
+    """
+    categories = serializers.ListSerializer(
+        label=_('Categories'),
+        help_text=_('List of category names to filter on'),
+        required=False,
+        child=serializers.CharField()
+    )
+    uuids = serializers.ListSerializer(
+        label=_('List of element ID'),
+        help_text=_('List of UUIDs to filter on'),
+        required=False,
+        source='elementsUuids',
+        child=serializers.UUIDField()
+    )
+
+
+class BIMElementSerializer(serializers.Serializer):
+    """
+    Serialize BIM element output
+    """
+    uuid = serializers.UUIDField(
+        label=_('Element UUID'),
+        help_text=_('UUID of the element'),
+        read_only=True
+    )
+    name = serializers.CharField(
+        label=_('Name of the element'),
+        help_text=_('Name of the element'),
+        read_only=True
+    )
+    category_id = serializers.IntegerField(
+        label=_('Category ID'),
+        help_text=_('Numeric ID of the category'),
+        source='categoryId',
+        read_only=True
+    )
+    buffer_id = serializers.IntegerField(
+        label=_('Buffer ID'),
+        help_text=_('Numeric ID of the buffer'),
+        source='bufferId',
+        read_only=True
+    )
+    bounding_box = serializers.ListSerializer(
+        label=_('3D Bounding box'),
+        help_text=_('Two corners of the bounding box'),
+        child=serializers.FloatField(),
+        source='boundingBox',
+        read_only=True
+    )
+    transform = serializers.ListSerializer(
+        label=_('3D transform'),
+        help_text=_('Transformation matrix'),
+        child=serializers.FloatField(),
+        read_only=True
+    )
+
+
+class BIMMetaElementLayerSerializer(serializers.Serializer):
+    layers = serializers.JSONField(
+        label=_('layers'),
+        help_text=_('Layer Information'),
+        read_only=True
+    )
+    plans = serializers.JSONField(
+        label=_('plans'),
+        help_text=_('plans Information'),
+        read_only=True,
+        required=False
+    )
+
+
+class BIMMetaElementSerializer(serializers.Serializer):
+    """
+    Serialize BIM Layer Meta Element output
+    """
+    message = serializers.CharField(
+        label=_('message'),
+        help_text=_('Message'),
+        read_only=True
+    )
+    status = serializers.CharField(
+        label=_('status'),
+        help_text=_('Status'),
+        read_only=True
+    )
+    data = BIMMetaElementLayerSerializer(
+        label=_('data'),
+        help_text=_('Response Data'),
+        read_only=True
+    )
+
+
+class BIMModelQuerySerializer(serializers.Serializer):
+    """
+    Serialize BIM Model query parameters
+    """
+    archived = serializers.BooleanField(
+        label=_('Archived'),
+        help_text=_('Is model archived'),
+        source='options/show_archived',
+        default=False,
+        read_only=True
+    )
+    unlocked = serializers.BooleanField(
+        label=_('Unlocked'),
+        help_text=_('Force ACL check for admin users'),
+        default=False,
+        read_only=True
+    )
+    updated_after = serializers.DateField(
+        label=_('Model updated after'),
+        help_text=_('date of latest modification'),
+        required=False,
+        source='lastUpdate'
+    )
+
+
+class BIMModelSerializer(serializers.Serializer):
+    """
+    Serialize BIM model output
+    """
+    id = serializers.IntegerField(
+        label=_('Model ID'),
+        help_text=_('Numeric ID of the model'),
+        read_only=True
+    )
+    uuid = serializers.UUIDField(
+        label=_('Model UUID'),
+        help_text=_('Universal ID of the model'),
+        read_only=True,
+        source='guid'
+    )
+    name = serializers.CharField(
+        label=_('Model name'),
+        read_only=True
+    )
+    user_id = serializers.IntegerField(
+        label=_('Owner ID'),
+        help_text=_('Numeric ID of the owner of the model'),
+        read_only=True
+    )
+    private = serializers.BooleanField(
+        label=_('Private model'),
+        help_text=_('Is the model private. Access is limited'),
+        default=False,
+        read_only=True
+    )
+    created_at = CastingDateTimeField(
+        label=_('Creation date'),
+        help_text=_('Creation timestamp'),
+        source='creation_date',
+        read_only=True
+    )
+    updated_at = CastingDateTimeField(
+        label=_('Update date'),
+        help_text=_('Update timestamp'),
+        source='modified_date',
+        read_only=True
+    )
+    phase = serializers.IntegerField(
+        label=_('project phase number'),
+        help_text=_('Index of the project phase the model is in'),
+        read_only=True
+    )
+    archived = serializers.BooleanField(
+        label=_('Archived'),
+        help_text=_('Is model archived'),
+        source='archive',
+        default=False,
+        read_only=True
+    )
+    additional_information = serializers.CharField(
+        label=_('Additional information'),
+        help_text=_('Free text'),
+        source='info',
+        read_only=True
+    )
+    landmarks = LandmarkSerializer(
+        label=_('Layer landmarks'),
+        help_text=_('Layer landmarks'),
+        read_only=True
+    )
+    categories = serializers.ListSerializer(
+        label=_('Visible categories'),
+        help_text=_('List of visible categories names'),
+        child=serializers.CharField(),
+        source='visible_categories',
+        read_only=True
+    )
+    camera_info = serializers.CharField(
+        label=_('camera info'),
+        help_text=_('Information on the camera position'),
+        read_only=True
+    )
+    thumbnail = serializers.CharField(
+        label=_('Thumbnail URL'),
+        help_text=_('URL of the thumbnail'),
+        read_only=True
+    )
+    default_layer_name = serializers.CharField(
+        label=_('Default layer name'),
+        help_text=_('Name of the default layer'),
+        read_only=True
+    )
+    levels = serializers.ListSerializer(
+        label=_('Model levels'),
+        help_text=_('List of model level names'),
+        child=serializers.CharField(),
+        read_only=True
+    )
+    rooms = serializers.ListSerializer(
+        label=_('Model rooms'),
+        help_text=_('List of model room names'),
+        child=serializers.CharField(),
+        read_only=True
+    )
+    tracking_image = serializers.CharField(
+        label=_('Model tracking image'),
+        read_only=True
+    )
+
+
+class BcfReviewFilterByParamCommonAttributesSerializer(serializers.Serializer):
+    values = serializers.ListField(
+        child=serializers.UUIDField(),
+        label=_('values'),
+        help_text=_('values')
+    )
+
+    type = serializers.CharField(
+        label=_('type'),
+        help_text=_('Specify the Type ex: in'),
+        default="in"
+    )
+    data_type = serializers.CharField(
+        label=_('data_type'),
+        help_text=_('Specify the Data Type ex: int/str'),
+        default="str"
+    )
+
+
+class SelectedFlagsSerializer(serializers.Serializer):
+    _selected = serializers.BooleanField(
+        label=_("selected boolean value"),
+        help_text=_("Selected boolean value"),
+        default=False
+    )
+    selected = serializers.BooleanField(
+        label=_("selected boolean value"),
+        help_text=_("Selected boolean value"),
+        default=False
+    )
+
+
+class TagInfoSerializer(SelectedFlagsSerializer):
+    id = serializers.CharField(
+        label=_("Unique Tag ID"),
+        help_text=_('Unique Tag ID'))
+
+    tag_uuid = serializers.UUIDField(
+        label=_("Unique Tag UUID"),
+        help_text=_('Unique Tag UUID')
+    )
+
+    label = serializers.CharField(
+        label=_("label"),
+        help_text=_("Tag Label"))
+
+    type = serializers.CharField(
+        label=_("type"),
+        help_text=_("Tag Type"))
+
+    archive = serializers.CharField(
+        label=_("archive"),
+        help_text=_("archived Tag"),
+        default="0"
+    )
+    update_time = CastingDateTimeField(
+        label=_('Update date'),
+        help_text=_('Update timestamp')
+    )
+    rfields = serializers.JSONField(
+        label=_("rfields"),
+        help_text=_("R Fields"),
+        default={}
+    )
+    ltag = serializers.BooleanField(
+        label=_("ltag"),
+        help_text=_("ltag"),
+        default=False
+    )
+    update = serializers.BooleanField(
+        label=_("update"),
+        help_text=_("update"),
+        default=False
+    )
+    md_uuid = serializers.UUIDField(
+        label=_("md_uuid"),
+        help_text=_("MD UUID")
+    )
+
+
+class BIMReviewSelectedItemSerializer(TagInfoSerializer):
+    update_time = serializers.CharField(
+        label=_('update time'),
+        help_text=_('Update time in EPOCH format')
+    )
+    tag_uuid_bin = serializers.UUIDField(
+        label=_('tag uuid bin'),
+        help_text=_('tag uuid bin')
+    )
+
+
+class ProgressStateFilterSerializer(BcfReviewFilterByParamCommonAttributesSerializer):
+    values = serializers.ListField(
+        child=serializers.IntegerField(),
+        label=_('values'),
+        help_text=_('values')
+    )
+    key = serializers.CharField(
+        label=_('key'),
+        help_text=_('Specify key on which the filter needs to be applied ex: progress_state.value_index'),
+        default="progress_state.value_index"
+    )
+
+    data_type = serializers.CharField(
+        label=_('data_type'),
+        help_text=_('Specify the Data Type ex: int/str'),
+        default="int"
+    )
+
+
+class TypeFilterSerializer(BcfReviewFilterByParamCommonAttributesSerializer):
+    key = serializers.CharField(
+        label=_('key'),
+        help_text=_('Specify key on which the filter needs to be applied ex: type.object_uuid'),
+        default="type.object_uuid"
+    )
+
+
+class FromFilterSerializer(BcfReviewFilterByParamCommonAttributesSerializer):
+    values = serializers.ListField(
+        child=serializers.CharField(),
+        label=_('values'),
+        help_text=_('values'),
+        default=['bim']
+    )
+
+    key = serializers.CharField(
+        label=_('key'),
+        help_text=_('Specify key on which the filter needs to be applied ex: bim_infos.review_type'),
+        default="bim_infos.review_type"
+    )
+
+
+class PriorityFilterSerializer(BcfReviewFilterByParamCommonAttributesSerializer):
+    key = serializers.CharField(
+        label=_('key'),
+        help_text=_('Specify key on which the filter needs to be applied ex: priority.object_uuid'),
+        default="priority.object_uuid"
+    )
+
+
+class SystemUserFilterSerializer(BcfReviewFilterByParamCommonAttributesSerializer):
+    key = serializers.CharField(
+        label=_('key'),
+        help_text=_('Specify key on which the filter needs to be applied ex: system_users'),
+        default="system_users"
+    )
+
+    type = serializers.CharField(
+        label=_('type'),
+        help_text=_('Specify the Type ex: link_by'),
+        default="link_by"
+    )
+
+    object_type = serializers.CharField(
+        label=_('object_type'),
+        help_text=_('Specify Object Type on which the filter needs to be applied ex: obj:review'),
+        default="obj:review"
+    )
+
+    object_dest_type = serializers.CharField(
+        label=_('object_dest_type'),
+        help_text=_('Specify Object Dest Type on which the filter needs to be applied ex: user_action'),
+        default="user_action"
+    )
+    config_values = serializers.ListField(child=UserInfoSerializer(), source="configValues")
+
+
+class CreatedUserFilterSerializer(BcfReviewFilterByParamCommonAttributesSerializer):
+    key = serializers.CharField(
+        label=_('key'),
+        help_text=_('Specify key on which the filter needs to be applied ex: created_by'),
+        default="created_by"
+    )
+    type = serializers.CharField(
+        label=_('type'),
+        help_text=_('Specify the Type ex: created_by'),
+        default="created_by"
+    )
+
+    config_values = serializers.ListField(child=UserInfoSerializer(), source="configValues")
+
+
+class TagsFilterSerializer(BcfReviewFilterByParamCommonAttributesSerializer):
+    key = serializers.CharField(
+        label=_('key'),
+        help_text=_('Specify key on which the filter needs to be applied ex: tags'),
+        default="tags"
+    )
+    type = serializers.CharField(
+        label=_('type'),
+        help_text=_('Specify the Type ex: tags'),
+        default="tags"
+    )
+
+    config_values = serializers.ListField(child=TagInfoSerializer(), source="configValues")
+
+
+class BcfReviewFilterByParamSerializer(serializers.Serializer):
+    progress_state = ProgressStateFilterSerializer(
+        label=_('progress_state'),
+        help_text=_('Specify the Progess State Filter ex: 0,1,2,3'),
+        required=False
+    )
+
+    type = TypeFilterSerializer(
+        label=_('type'),
+        help_text=_('Specify the Type UUID Filter'),
+        required=False
+    )
+
+    from_field = FromFilterSerializer(
+        label=_('from'),
+        help_text=_('Specify the From Filter ex: bim'),
+        required=False,
+        source="from"
+    )
+
+    priority = PriorityFilterSerializer(
+        label=_('priority'),
+        help_text=_('Specify the Priority UUID Filter'),
+        required=False
+    )
+
+    system_users = SystemUserFilterSerializer(
+        label=_('system_users'),
+        help_text=_('Specify the System User UUID Filter'),
+        required=False
+    )
+
+    created_by = CreatedUserFilterSerializer(
+        label=_('created_by'),
+        help_text=_('Specify the Created By User UUID Filter'),
+        required=False
+    )
+    tags = TagsFilterSerializer(
+        label=_('tags'),
+        help_text=_('Specify the Tags UUID Filter'),
+        required=False
+    )
+
+    tag_search_type = serializers.CharField(
+        label=_('tag_search_type'),
+        help_text=_('Specify the search Type ex: OR/AND'),
+        default="OR"
+    )
+
+
+class BcfReviewWorkerQueueQueryFilterSerializer(serializers.Serializer):
+    """
+        Serializer for BcfReviewWorker Queue Query Argument Filter Attribute
+    """
+    meta_type = serializers.CharField(
+        label=_('meta_type'),
+        help_text=_('Specify the Meta Type ex: review'),
+        default="review"
+    )
+    format = serializers.CharField(
+        label=_('format'),
+        help_text=_('Specify the Format Type ex: object'),
+        default="object"
+    )
+    find_by_param = serializers.JSONField(
+        label=_('find_by_param'),
+        help_text=_('{"dictionnary of find by parameters: bim_infos.linked_model": "modelUUID" }'),
+        default={"bim_infos.linked_model": "UUIDString"},
+        required=False
+    )
+
+    filter_by_params = BcfReviewFilterByParamSerializer(required=False)
+
+    filter_by_tags_uuids_mode = serializers.CharField(
+        label=_('filter_by_tags_uuids_mode'),
+        help_text=_('Specify the Filter by tags UUIDS mode Type ex: OR/AND'),
+        default="OR",
+        required=False
+    )
+    filter_by_tags_uuids = serializers.ListField(
+        child=serializers.UUIDField(),
+        label=_('filter_by_tags_uuids'),
+        help_text=_('Specify the UUIDs of Tags'),
+        required=False
+    )
+
+
+class BcfReviewWorkerQueueQueryArgumentSerializer(serializers.Serializer):
+    """
+    Serializer for BcfReviewWorker Queue Query Argument Attribute
+    """
+    filters = BcfReviewWorkerQueueQueryFilterSerializer(required=False)
+
+    viewer = serializers.CharField(
+        label=_('viewer'),
+        help_text=_('Specify the Viewer'),
+        default='bim'
+    )
+
+    language = serializers.CharField(
+        label=_('language'),
+        help_text=_('Specify the Language'),
+        default='en'
+    )
+
+    picture_project = serializers.CharField(
+        label=_('picture_project'),
+        help_text=_('Specify the Value of Picture Project ex: ab0k56m7lo_a00f0f5e748742b5cc371fde01299c327bc1f24c'),
+        required=False,
+        source="pictureProject"
+    )
+
+    project_address = serializers.CharField(
+        label=_('project_address'),
+        help_text=_('Specify the Value of Project Address'),
+        allow_null=True,
+        required=False,
+        source="projectAddress"
+    )
+
+    project_name = serializers.CharField(
+        label=_('project_name'),
+        help_text=_('Specify the Project Name'),
+        required=False,
+        source="projectName"
+    )
+    project_serial = serializers.CharField(
+        label=_('project_serial'),
+        help_text=_('Specify the Project Serial'),
+        required=False,
+        source="projectSerial"
+    )
+
+
+class BcfReviewWorkerQueueQuerySerializer(serializers.Serializer):
+    """
+    Serializer for BcfReviewWorker Queue Query
+    """
+
+    worker = serializers.ChoiceField(
+        label=_('type of worker'),
+        help_text=_('Specify the Type of the Worker'),
+        choices=["BcfReviewWorker"],
+        default="BcfReviewWorker",
+        source="workerClass"
+    )
+
+    service = serializers.ChoiceField(
+        label=_('service'),
+        help_text=_('service used for download'),
+        choices=["krustyDelegate"],
+        default="krustyDelegate",
+        source="wsClass"
+    )
+
+    method = serializers.ChoiceField(
+        label=_('method'),
+        help_text=_('Specify the Method of the WebService'),
+        choices=["getReviewsBcfZip"],
+        default="getReviewsBcfZip",
+        source="wsMethod"
+    )
+
+    queue = serializers.ChoiceField(
+        label=_('queue'),
+        help_text=_('Queue'),
+        choices=["bcf-review-archive"],
+        default="bcf-review-archive"
+    )
+
+    filename = serializers.CharField(
+        label=_('File Name'),
+        help_text=_('Specify the Name of the File'),
+        default="file Name"
+    )
+    landscape = serializers.CharField(
+        label=_('Landscape'),
+        help_text=_('Specify the Landscape ex: portrait'),
+        default="portrait"
+    )
+    file_details = BcfReviewWorkerQueueQueryArgumentSerializer(required=False, source="args")
+
+
+class BcfReviewWorkerQueueSerializer(serializers.Serializer):
+    """
+    Serializer for BcfReviewWorker Queue Response
+    """
+    project_id = serializers.CharField(
+        label=_('Project Id'),
+        help_text=_('Project ID'),
+        source="project"
+    )
+
+    job_id = serializers.UUIDField(
+        label=_('jobID'),
+        help_text=_('Job ID'),
+        source="jobID"
+    )
+    queue = serializers.CharField(
+        label=_('queue'),
+        help_text=_('queue')
+    )
+
+
+class BIMRichElementSerializer(serializers.Serializer):
+    """
+    BIM Rich Element Serializer
+    """
+    parameter_id = serializers.UUIDField(
+        label=_('parameter_id'),
+        help_text=_('UUID text representation of the Parameter'),
+        read_only=True,
+        source="parameter_uuid"
+    )
+    element_id = serializers.UUIDField(
+        label=_('element_id'),
+        help_text=_('UUID text representation of the Element'),
+        read_only=True,
+        source="element_uuid"
+    )
+    value = serializers.CharField(
+        label=_('value'),
+        help_text=_('value of the Element'),
+        read_only=True
+    )
+    creation_date = CastingDateTimeField(
+        label=_('creation_date'),
+        help_text=_('Date Time of Creation'),
+        read_only=True,
+        source="time"
+    )
+    user_id = serializers.IntegerField(
+        label=_('user_id'),
+        help_text=_('Id of the user who created the Element'),
+        read_only=True,
+        source="userid"
+    )
+    level = serializers.CharField(
+        label=_('level'),
+        help_text=_('Level associated with Element'),
+        read_only=True
+    )
+    set_flag = serializers.IntegerField(
+        label=_('set_flag'),
+        help_text=_('Set Flag'),
+        read_only=True,
+        source='flag'
+    )
+    data_field = serializers.CharField(
+        label=_('data_field'),
+        help_text=_('Data Field'),
+        read_only=True,
+        source='dataField'
+    )
+
+
+class BIMLayerByModelSerializer(serializers.Serializer):
+    """
+    Serializer for BIM Layer By Model
+    """
+    model_id = serializers.UUIDField(
+        label=_('Model UUID'),
+        help_text=_('UUID of the Model'),
+        read_only=True,
+        source='modeluuid'
+    )
+    layer_id = serializers.UUIDField(
+        label=_("Layer UUID"),
+        help_text=_('Universal ID of the layer'),
+        read_only=True,
+        source='guid'
+    )
+
+    name = serializers.CharField(
+        label=_('Layer name'),
+        help_text=_('Text name of the layer'),
+        read_only=True
+    )
+
+    label = serializers.CharField(
+        label=_('Layer display name'),
+        help_text=_('Human readable name of the layer'),
+        read_only=True,
+        source="displayName"
+    )
+
+    model_file = serializers.CharField(
+        label=_('Model file ID'),
+        help_text=_('File containing the model'),
+        read_only=True,
+        source='rmodel'
+    )
+
+
+class BIMReviewIconStyleSerializer(serializers.Serializer):
+    color = serializers.ChoiceField(
+        choices=['#2E7D32', '#FF8F00', '#FFEB3B', '#C62828', '#E57373', '#7E57C2', '#AED581', '#ffc107', '#e53935',
+                 '#f06292', '#26c6da', '#8bc34a', '#616161'],
+        label=_('color'),
+        help_text=_('Hash code of color {[Status: Open-#2E7D32, In progress-#FF8F00, Closed-#FFEB3B, '
+                    'Re opened-#C62828], [Priority: High-#E57373, Medium-#7E57C2, Low-#AED581], '
+                    '[Type: remark-#ffc107, problem-#e53935, interface-#f06292, demand-#26c6da, solution-#8bc34a, '
+                    'undefined-#616161]}'),
+    )
+
+
+class BIMReviewEmbeddedSerializer(SelectedFlagsSerializer):
+    object_uuid = serializers.UUIDField(
+        label=_('object_uuid'),
+        help_text=_('String representation of object uuid'),
+        required=False
+    )
+    icon = serializers.CharField(
+        label=_('icon'),
+        help_text=_('String representation of the icon for the status'),
+        default='fad fa-circle',
+        required=False
+    )
+    is_default = serializers.BooleanField(
+        label=_('is_default'),
+        help_text=_('Is default?'),
+        source='isDefault',
+        required=False,
+        default=True
+    )
+    uuid = serializers.UUIDField(
+        label=_('uuid'),
+        help_text=_('uuid in string representation'),
+        required=False
+    )
+
+
+class BIMReviewDataProgressStateSerializer(BIMReviewEmbeddedSerializer):
+    id = serializers.ChoiceField(
+        choices=[0, 1, 2, 3],
+        label=_('id'),
+        help_text=_('Numeric id (0-Open, 1-In progress, 2-Closed, 3-Re opened'),
+        required=False,
+        default=0
+    )
+    index = serializers.ChoiceField(
+        choices=[0, 1, 2, 3],
+        label=_('index'),
+        help_text=_('Numeric index (0-Open, 1-In progress, 2-Closed, 3-Re opened'),
+        required=False,
+        default=0
+    )
+    value_index = serializers.ChoiceField(
+        choices=[0, 1, 2, 3],
+        label=_('value_index'),
+        help_text=_('Numeric value index (0-Open, 1-In progress, 2-Closed, 3-Re opened'),
+        required=False,
+        default=0
+    )
+    label = serializers.ChoiceField(
+        choices=['Open', 'In progress', 'Closed', 'Re opened'],
+        label=_('label'),
+        help_text=_('Label for status (Open, In progress, Closed, Re opened'),
+        required=False,
+        default='Open'
+    )
+    value = serializers.ChoiceField(
+        choices=['Open', 'In progress', 'Closed', 'Re opened'],
+        label=_('value'),
+        help_text=_('Value for status (Open, In progress, Closed, Re opened'),
+        required=False,
+        default='Open'
+    )
+    title = serializers.ChoiceField(
+        choices=['Open', 'In progress', 'Closed', 'Re opened'],
+        label=_('title'),
+        help_text=_('Value for title (Open, In progress, Closed, Re opened'),
+        required=False,
+        default='Open'
+    )
+    color = serializers.ChoiceField(
+        choices=['#2E7D32', '#FF8F00', '#FFEB3B', '#C62828'],
+        label=_('color'),
+        help_text=_('Hash code of color (Open-#2E7D32, In progress-#FF8F00, Closed-#FFEB3B, Re opened-#C62828'),
+        required=False,
+        default='#2E7D32'
+    )
+    dark_color = serializers.ChoiceField(
+        choices=['#2E7D32', '#FF8F00', '#FFEB3B', '#C62828'],
+        label=_('dark_color'),
+        help_text=_('Hash code of dark color (Open-#2E7D32, In progress-#FF8F00, Closed-#FFEB3B, Re opened-#C62828'),
+        source='darkColor',
+        required=False,
+        default='#2E7D32'
+    )
+    icon_style = BIMReviewIconStyleSerializer(
+        label=_('icon_style'),
+        help_text=_('Icon style object'),
+        required=False,
+        source='iconStyle'
+    )
+
+
+class BIMReviewDataPrioritySerializer(BIMReviewEmbeddedSerializer):
+    id = serializers.ChoiceField(
+        choices=[0, 1, 2],
+        label=_('id'),
+        help_text=_('Numeric id (0-High, 1-Medium, 2-Low'),
+        required=False,
+        default=0
+    )
+    index = serializers.ChoiceField(
+        choices=[0, 1, 2],
+        label=_('id'),
+        help_text=_('Numeric index (0-High, 1-Medium, 2-Low'),
+        required=False,
+        default=0
+    )
+    value_index = serializers.ChoiceField(
+        choices=[0, 1, 2],
+        label=_('value_index'),
+        help_text=_('Numeric value_index (0-High, 1-Medium, 2-Low'),
+        required=False,
+        default=0
+    )
+    label = serializers.ChoiceField(
+        choices=['High', 'Medium', 'Low'],
+        label=_('label'),
+        help_text=_('Label of priority'),
+        required=False,
+        default='High'
+    )
+    value = serializers.ChoiceField(
+        choices=['High', 'Medium', 'Low'],
+        label=_('value'),
+        help_text=_('Value of priority'),
+        required=False,
+        default='High'
+    )
+    title = serializers.ChoiceField(
+        choices=['High', 'Medium', 'Low'],
+        label=_('title'),
+        help_text=_('Title of priority'),
+        required=False,
+        default='High'
+    )
+    color = serializers.ChoiceField(
+        choices=['#E57373', '#7E57C2', '#AED581'],
+        label=_('color'),
+        help_text=_('Hash code of color (High-#E57373, Medium-#7E57C2, Low-#AED581'),
+        required=False,
+        default='#E57373'
+    )
+    dark_color = serializers.ChoiceField(
+        choices=['#E57373', '#7E57C2', '#AED581'],
+        label=_('dark_color'),
+        help_text=_('Hash code of dark color (High-#E57373, Medium-#7E57C2, Low-#AED581'),
+        source='darkColor',
+        required=False,
+        default='#E57373'
+    )
+    icon_style = BIMReviewIconStyleSerializer(
+        label=_('icon_style'),
+        help_text=_('Icon style object'),
+        required=False,
+        source='iconStyle'
+    )
+
+
+class BIMReviewDataTypeSerializer(BIMReviewEmbeddedSerializer):
+    label = serializers.ChoiceField(
+        choices=['remark', 'problem', 'interface', 'demand', 'solution', 'undefined'],
+        label=_('label'),
+        help_text=_('Label'),
+        required=False,
+        default='problem'
+    )
+    value = serializers.ChoiceField(
+        choices=['REMARK', 'ISSUES', 'CLASH', 'REQUEST', 'SOLUTION', 'UNDEFINED'],
+        label=_('value'),
+        help_text=_('Value in string'),
+        required=False
+    )
+    icon_style = BIMReviewIconStyleSerializer(
+        label=_('icon_style'),
+        help_text=_('Icon style object'),
+        required=False,
+        source='iconStyle'
+    )
+
+
+class BIMReviewCoordinateSerializer(serializers.Serializer):
+    x = serializers.FloatField(
+        label=_('x'),
+        help_text=_('Numeric value for x coordinate')
+    )
+    y = serializers.FloatField(
+        label=_('y'),
+        help_text=_('Numeric value for y coordinate')
+    )
+    z = serializers.FloatField(
+        label=_('z'),
+        help_text=_('Numeric value for z coordinate')
+    )
+    width = serializers.FloatField(
+        label=_('width'),
+        help_text=_('Numeric value for width'),
+        required=False
+    )
+    height = serializers.FloatField(
+        label=_('height'),
+        help_text=_('Numeric value for height'),
+        required=False
+    )
+    length = serializers.FloatField(
+        label=_('length'),
+        help_text=_('Numeric value for length'),
+        required=False
+    )
+
+
+class BIMReviewCameraSerializer(serializers.Serializer):
+    fov = serializers.FloatField(
+        label=_('fov'),
+        help_text=_('Decimal value for fov'),
+        required=False
+    )
+    up = BIMReviewCoordinateSerializer(
+        label=_('up'),
+        help_text=_('up coordinate values'),
+        required=False
+    )
+    target = BIMReviewCoordinateSerializer(
+        label=_('target'),
+        help_text=_('target coordinate values'),
+        required=False
+    )
+    position = BIMReviewCoordinateSerializer(
+        label=_('position'),
+        help_text=_('position coordinate values'),
+        required=False
+    )
+    review_up_vector = BIMReviewCoordinateSerializer(
+        label=_('review up vector'),
+        help_text=_('review up vector coordinate values'),
+        source='reviewUpVector',
+        required=False
+    )
+    review_direction = BIMReviewCoordinateSerializer(
+        label=_('review_direction'),
+        help_text=_('review direction coordinate values'),
+        source='reviewDirection',
+        required=False
+    )
+    uuid = serializers.UUIDField(
+        label=_('uuid'),
+        help_text=_('Unique id for item')
+    )
+
+
+class BIMReviewSelectedItemsSerializer(serializers.Serializer):
+    uuid = serializers.UUIDField(
+        label=_('uuid'),
+        help_text=_('Unique id for selected item'),
+        required=False
+    )
+    r_model = serializers.CharField(
+        label=_('r model'),
+        help_text=_('Unique id for r model'),
+        required=False,
+        source='r__model'
+    )
+    pick_position = BIMReviewCoordinateSerializer(
+        label=_('pick position'),
+        help_text=_('Pick position coordinates'),
+        required=False,
+        source='pickPosition'
+    )
+    bounding_box = BIMReviewCoordinateSerializer(
+        label=_('bounding box'),
+        help_text=_('Bounding box coordinates'),
+        required=False
+    )
+
+
+class BIMReviewSystemPictureItemFilterSerializer(serializers.Serializer):
+    query_filter = serializers.JSONField(
+        label=_('query filter'),
+        help_text=_('Query filter'),
+        required=False,
+        source='queryFilter'
+    )
+    level_filter = serializers.JSONField(
+        label=_('level filter'),
+        help_text=_('Level filter'),
+        required=False,
+        source='levelFilter'
+    )
+    manual_hidden_filter = serializers.JSONField(
+        label=_('manual hidden filter'),
+        help_text=_('Manual hidden filter'),
+        required=False,
+        source='manualHiddenFilter'
+    )
+
+
+class BIMReviewSystemPictureItemBCFItemSerializer(serializers.Serializer):
+    visible = serializers.BooleanField(
+        label=_('visible'),
+        help_text=_('Boolean value for bcf items to visible or not'),
+        required=False
+    )
+    items = serializers.ListField(
+        label=_('items'),
+        help_text=_('List of bcf items unique ids'),
+        required=False,
+        child=serializers.UUIDField()
+    )
+
+
+class BIMReviewSystemPictureItemSerializer(serializers.Serializer):
+    file_hash = serializers.CharField(
+        label=_('file hash'),
+        help_text=_('file hash'),
+        required=False
+    )
+    camera = BIMReviewCameraSerializer(
+        label=_('camera'),
+        help_text=_('Camera data'),
+        required=False
+    )
+    selected_items = serializers.ListSerializer(
+        label=_('selected_items'),
+        help_text=_('List of selected items'),
+        required=False,
+        source='selectedItems',
+        child=BIMReviewSelectedItemsSerializer()
+    )
+    review_items = serializers.ListField(
+        label=_('review_items'),
+        help_text=_('review items'),
+        required=False,
+        child=serializers.JSONField()
+    )
+    clipping_planes = serializers.ListField(
+        label=_('clipping_planes'),
+        help_text=_('clipping planes'),
+        required=False,
+        child=serializers.JSONField(),
+        source='clippingPlanes'
+    )
+    filters = BIMReviewSystemPictureItemFilterSerializer(
+        label=_('filters'),
+        help_text=_('filters data'),
+        required=False
+    )
+    bcf_items = BIMReviewSystemPictureItemBCFItemSerializer(
+        label=_('bcf_items'),
+        help_text=_('BCF items data'),
+        required=False,
+        source='bcfItems'
+    )
+
+
+class BIMReviewSystemPictureSerializer(serializers.Serializer):
+    items = serializers.ListField(
+        child=BIMReviewSystemPictureItemSerializer(),
+        label=_('items'),
+        help_text=_('items')
+    )
+
+
+class BIMReviewSystemTagSerializer(serializers.Serializer):
+    selected_items = serializers.JSONField(
+        label=_('selected items'),
+        help_text=_('Selected items'),
+        source='selectedItems'
+    )
+    selectedItem = BIMReviewSelectedItemSerializer(
+        label=_('selected item'),
+        help_text=_('Selected Item')
+    )
+
+
+class BIMReviewSystemFileSerializer(serializers.Serializer):
+    label = serializers.CharField(
+        label=_('label'),
+        help_text=_('File label'),
+        required=False
+    )
+    parent_id = serializers.UUIDField(
+        label=_('parent id'),
+        help_text=_('Unique id for parent'),
+        required=False,
+        source='parent_uuid'
+    )
+    files_size = serializers.CharField(
+        label=_('file size'),
+        help_text=_('File size in string representation'),
+        required=False
+    )
+    id = serializers.UUIDField(
+        label=_('id'),
+        help_text=_('File UUID'),
+        required=False,
+        source='uuid'
+    )
+    files_path = serializers.CharField(
+        label=_('file path'),
+        help_text=_('File path'),
+        required=False
+    )
+    user_email = serializers.CharField(
+        label=_('user email'),
+        help_text=_('User email'),
+        required=False
+    )
+    created_by = serializers.CharField(
+        label=_('created by'),
+        help_text=_('Created by'),
+        required=False,
+        source='createdby'
+    )
+    files_id = serializers.CharField(
+        label=_('file id'),
+        help_text=_('Numeric id for file'),
+        required=False,
+    )
+    files_date = serializers.CharField(
+        label=_('file date'),
+        help_text=_('File date in EPOCH format'),
+        required=False,
+    )
+    file_primary_extension = serializers.CharField(
+        label=_('file primary extension'),
+        help_text=_('File primary extension'),
+        required=False,
+        source='primary_extension'
+    )
+    file_extension = serializers.CharField(
+        label=_('file extension'),
+        help_text=_('File extension'),
+        required=False
+    )
+
+
+class BIMReviewACLItemSerializer(serializers.Serializer):
+    uuid = serializers.UUIDField(
+        label=_('uuid'),
+        help_text=_('String representation of acl uuid'),
+        required=False,
+        source='acl_uuid'
+    )
+    id = serializers.CharField(
+        label=_('id'),
+        help_text=_('Numeric acl id in string representation'),
+        required=False,
+        source='acl_id'
+    )
+    type = serializers.ChoiceField(
+        choices=['visible'],
+        label=_('type'),
+        help_text=_('Acl type in string type'),
+        default='visible',
+        required=False,
+        source='acl_type'
+    )
+    value = serializers.BooleanField(
+        label=_('value'),
+        help_text=_('Acl value in boolean type'),
+        default=True,
+        required=False,
+        source='acl_value'
+    )
+
+
+class BIMReviewVisibilitySerializer(serializers.Serializer):
+    private = serializers.IntegerField(
+        label=_('private'),
+        help_text=_('Numeric value for private or public (1-private/0-public)'),
+    )
+    rights = serializers.ListField(
+        label=_('rights'),
+        help_text=_('List of rights'),
+        child=BIMReviewACLItemSerializer()
+    )
+
+
+class BIMReviewBimInfoObjectSerializer(serializers.Serializer):
+    id = serializers.UUIDField(
+        label=_('id'),
+        help_text=_('Unique id for bim object'),
+        source='uuid'
+    )
+    r_model = serializers.CharField(
+        label=_('r_model'),
+        help_text=_('Unique id for r model'),
+        source='r__model'
+    )
+    pick_position = BIMReviewCoordinateSerializer(
+        label=_('pick position'),
+        help_text=_('Pick position coordinates'),
+        source='pickPosition'
+    )
+    bounding_box = BIMReviewCoordinateSerializer(
+        label=_('bounding box'),
+        help_text=_('Bounding box data'),
+        source='pickPosition'
+    )
+
+
+class BIMReviewBimInfoSerializer(serializers.Serializer):
+    selected_bim_objects = serializers.ListField(
+        label=_('selected bim objects'),
+        help_text=_('Selected bim objects'),
+        child=BIMReviewBimInfoObjectSerializer()
+    )
+    review_type = serializers.CharField(
+        label=_('review type'),
+        help_text=_('Review type')
+    )
+    bim_layers = serializers.ListField(
+        label=_('bim layers'),
+        help_text=_('List of bim layers UUID'),
+        child=serializers.UUIDField()
+    )
+    bim_r_models = serializers.ListField(
+        label=_('bim r models'),
+        help_text=_('List of bim r models'),
+        child=serializers.CharField(),
+        source='bim_r__models'
+    )
+    linked_model = serializers.UUIDField(
+        label=_('linked model'),
+        help_text=_('Unique id for linked model')
+    )
+
+
+class BIMReviewDataSerializer(serializers.Serializer):
+    title = serializers.CharField(
+        label=_('title'),
+        help_text=_('Title of the review')
+    )
+    description = serializers.CharField(
+        label=_('description'),
+        help_text=_('Description of the review')
+    )
+    section_general = serializers.JSONField(
+        label=_('section general'),
+        help_text=_('Section General'),
+        source='sectionGeneral',
+        required=False
+    )
+    progress_state = BIMReviewDataProgressStateSerializer(
+        label=_('progress state'),
+        help_text=_('Progress state (Status of the review - Open, In progress, Closed, Re opened'),
+        required=False
+    )
+    priority = BIMReviewDataPrioritySerializer(
+        label=_('priority'),
+        help_text=_('priority of the review (High, Medium, Low)'),
+        required=False
+    )
+    type = BIMReviewDataTypeSerializer(
+        label=_('type'),
+        help_text=_('Type of review (remark,problem,interface,demand,solution,undefined)'),
+        required=False
+    )
+    due_date = serializers.IntegerField(
+        label=_('due_date'),
+        help_text=_('due date for review'),
+        required=False
+    )
+    system_users = serializers.JSONField(
+        label=_('system_users'),
+        help_text=_('System Users'),
+        required=False
+    )
+    system_pictures = BIMReviewSystemPictureSerializer(
+        label=_('system_pictures'),
+        help_text=_('System pictures'),
+        required=False
+    )
+    system_tags = BIMReviewSystemTagSerializer(
+        label=_('system tag'),
+        help_text=_('System tag'),
+        required=False
+    )
+    system_files = serializers.ListField(
+        label=_('system files'),
+        help_text=_('System files'),
+        required=False,
+        child=BIMReviewSystemFileSerializer()
+    )
+    visibility = BIMReviewVisibilitySerializer(
+        label=_('visibility'),
+        help_text=_('Visibility data'),
+        required=False
+    )
+    camera_setup = serializers.ListField(
+        label=_('camera setup'),
+        help_text=_('Camera setup'),
+        required=False,
+        child=serializers.JSONField()
+    )
+    bim_infos = BIMReviewBimInfoSerializer(
+        label=_('bim infos'),
+        help_text=_('Bim info data')
+    )
+
+
+class BIMReviewACLListSerializer(serializers.Serializer):
+    acl = serializers.ListSerializer(
+        child=BIMReviewACLItemSerializer(),
+        label=_('acl'),
+        help_text=_('List of acl item')
+    )
+
+
+class BIMReviewCreateSerializer(serializers.Serializer):
+    """
+    Serializer for adding reviews to objects query parameters
+    """
+
+    data = BIMReviewDataSerializer(
+        label=_('Request data'),
+        help_text=_('Request data for adding review')
+    )
+    meta_type = serializers.ChoiceField(
+        label=_('Meta type'),
+        help_text=_('Meta type for the service'),
+        choices=['review'],
+        default='review'
+    )
+    r_fields = serializers.JSONField(
+        label=_('r_fields'),
+        help_text=_('r fields'),
+        required=False,
+        source='rfields'
+    )
+    object_link_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        label=_('Object link dest UUIDs'),
+        help_text=_('List of Object UUIDs in string representation'),
+        source='object_link_dest_uuids',
+        required=False
+    )
+    private = serializers.ChoiceField(
+        choices=[0, 1],
+        label=_('private'),
+        help_text=_('ACl permission (public/private - 0/1 respectively'),
+        required=False,
+        default=1
+    )
+    acls = BIMReviewACLListSerializer(
+        label=_('acls'),
+        help_text=_('Acl permission data'),
+        required=False
+    )
+
+
+class BIMSavePNGCreateSerializer(serializers.Serializer):
+    """
+    Serialize save PNG request request parameters
+    """
+    path = serializers.CharField(
+        label=_('Image path'),
+        help_text=_('Path of the image to be uploaded')
+    )
+    source = serializers.CharField(
+        label=_('Image source'),
+        help_text=_('Image source in base64 representation')
+    )
+
+
+class BIMSavePNGSerializer(serializers.Serializer):
+    """
+    Serialize save PNG output
+    """
+    thumbnail_path = serializers.CharField(
+        label=_('Uploaded PNG image path'),
+        help_text=_('Path of uploaded image')
+    )
+
+
+class BIMFilterSerializer(serializers.Serializer):
+    """
+    Serialize BIM Filter output
+    """
+    id = serializers.UUIDField(
+        label=_('id'),
+        help_text=_('ID of the Filter'),
+        read_only=True,
+        source="uuid"
+    )
+    meta_type = serializers.ChoiceField(
+        label=_('meta_type'),
+        help_text=_("Meta Type"),
+        choices=['kbquickfilter', 'kbfilter', 'kbactionfilter', 'kbpivotfilter'],
+        read_only=True
+    )
+    type = serializers.CharField(
+        label=_('type'),
+        help_text=_('Type of Filter')
+    )
+    label = serializers.CharField(
+        label=_('label'),
+        help_text=_('Label of Filter')
+    )
+    data_field = serializers.CharField(
+        label=_('data_field'),
+        help_text=_('Data Field of Filter'),
+        source='dataField'
+    )
+
+
+class BIMLayerInfosFromRModelRequestSerializer(serializers.Serializer):
+    model_file_ids = serializers.ListField(
+        child=serializers.CharField(),
+        label=_('model_file_ids'),
+        help_text=_('File containing the model'),
+        source="r__models"
+    )
+
+
+class BIMLayerInfosFromRModel(serializers.Serializer):
+    """
+    Serializer for BIM Layer Info By R Model
+    """
+    model_id = serializers.UUIDField(
+        label=_('Model UUID'),
+        help_text=_('UUID of the Model'),
+        read_only=True,
+        source='model_uuid'
+    )
+    layer_id = serializers.UUIDField(
+        label=_("Layer UUID"),
+        help_text=_('Universal ID of the layer'),
+        read_only=True,
+        source='layer_group_uuid'
+    )
+
+    name = serializers.CharField(
+        label=_('Layer name'),
+        help_text=_('Text name of the layer'),
+        read_only=True
+    )
+
+    label = serializers.CharField(
+        label=_('Layer display name'),
+        help_text=_('Human readable name of the layer'),
+        read_only=True,
+        source="display_name"
+    )
+
+    model_name = serializers.CharField(
+        label=_('model name'),
+        help_text=_('Model name'),
+        read_only=True
+    )
+
+    model_file = serializers.CharField(
+        label=_('Model file ID'),
+        help_text=_('File containing the model'),
+        read_only=True,
+        source='file'
+    )
+
+    thumbnail = serializers.CharField(
+        label=_('Thumbnail URL'),
+        help_text=_('URL of the thumbnail'),
+        read_only=True
+    )
+
+    revision = serializers.BooleanField(
+        label=_('revision'),
+        help_text=_('Is Revised?'),
+        read_only=True
+    )
+    layer_archived = serializers.BooleanField(
+        label=_('layer_archived'),
+        help_text=_('Layer Archived?'),
+        read_only=True,
+        source="layer_archive"
+    )
+    model_archived = serializers.BooleanField(
+        label=_('model_archive'),
+        help_text=_('Model Archived?'),
+        read_only=True,
+        source="model_archive"
+    )
+
+
+class BIMSystemLevelRequestSerializer(serializers.Serializer):
+    name = serializers.CharField(
+        label=_("level name"),
+        help_text=_("Level Name")
+    )
+
+    unit = serializers.ChoiceField(
+        label=_("unit"),
+        help_text=_("Level Unit"),
+        choices=["m"],
+        default="m"
+    )
+
+    group = serializers.CharField(
+        label=_('group'),
+        help_text=_('Group'),
+        default="GLOBAL"
+    )
+
+    label = serializers.CharField(
+        label=_('label'),
+        help_text=_('Level Display Name'),
+        required=False
+    )
+
+    height = serializers.DecimalField(
+        label=_('height'),
+        help_text=_('Level Height'),
+        max_digits=None,
+        decimal_places=5,
+        default=0.0
+    )
+
+    elevation = serializers.DecimalField(
+        label=_('elevation'),
+        help_text=_('Level Elevation'),
+        max_digits=None,
+        decimal_places=5,
+        default=0.0
+    )
+
+    last_elevation = serializers.DecimalField(
+        label=_('last_elevation'),
+        help_text=_('Level Last Elevation'),
+        max_digits=None,
+        decimal_places=5,
+        default=0.0
+    )
+
+    last_elevation_down = serializers.DecimalField(
+        label=_('last_elevation_down'),
+        help_text=_('Level Last Elevation Down'),
+        max_digits=None,
+        decimal_places=5,
+        default=0.0
+    )
+
+
+class BIMLevelSerializer(BIMSystemLevelRequestSerializer):
+    name = serializers.CharField(
+        label=_("level name"),
+        help_text=_("Level Name"),
+        read_only=True
+    )
+    unit = serializers.CharField(
+        label=_('unit'),
+        help_text=_('Unit'),
+        read_only=True
+    )
+    id = serializers.UUIDField(
+        label=_('id'),
+        help_text=_('UUID representation of Level ID'),
+        read_only=True,
+        source="level_uuid"
+    )
+    model_id = serializers.IntegerField(
+        label=_('model_id'),
+        help_text=_('Numeric Model ID'),
+        read_only=True,
+        source="bim_model_id",
+        required=False
+    )
+    model_label = serializers.CharField(
+        label=_('model_label'),
+        help_text=_('Model Display Name'),
+        read_only=True,
+        source="bim_model_label",
+        required=False
+    )
+
+    header = serializers.IntegerField(
+        label=_('header'),
+        help_text=_('Level Header'),
+        read_only=True,
+        required=False
+    )
+
+
+class BIMSystemLevelInfoSerializer(serializers.Serializer):
+    human_id = serializers.CharField(
+        label=_('human_id'),
+        help_text=_('Human Readable ID'),
+        read_only=True
+    )
+
+    id = serializers.IntegerField(
+        label=_('id'),
+        help_text=_('Numeric Representation of Level  ID'),
+        read_only=True
+    )
+
+    uuid = serializers.UUIDField(
+        label=_('uuid'),
+        help_text=_('UUID Representation of Level ID'),
+        read_only=True,
+        source="object_uuid"
+    )
+
+    key = serializers.UUIDField(
+        label=_('key'),
+        help_text=_('key'),
+        read_only=True
+    )
+
+    meta_type = serializers.CharField(
+        label=_('meta_type'),
+        help_text=_('Meta Type'),
+        read_only=True
+    )
+
+    meta_flag = serializers.IntegerField(
+        label=_('meta_flag'),
+        help_text=_('Meta Flag'),
+        read_only=True
+    )
+
+    private = serializers.BooleanField(
+        label=_('Private layer'),
+        help_text=_('Is the layer private. Access is limited'),
+        read_only=True
+    )
+
+    stage = serializers.CharField(
+        label=_('stage'),
+        help_text=_('Level Stage'),
+        read_only=True
+    )
+    latitude = serializers.IntegerField(
+        label=_('latitude'),
+        help_text=_('Latitude Coordinates of Level'),
+        read_only=True,
+        source="lat"
+    )
+    longitude = serializers.IntegerField(
+        label=_('longitude'),
+        help_text=_('Longitude Coordinates of Level'),
+        read_only=True,
+        source="lng"
+    )
+    user_id = serializers.UUIDField(
+        label=_('user_id'),
+        help_text=_('UUID Representation of User ID'),
+        read_only=True,
+        source="user_uuid"
+    )
+
+    archived = serializers.BooleanField(
+        label=_('archived'),
+        help_text=_('Is Archived?'),
+        read_only=True,
+        source="archive"
+    )
+    creation_time = serializers.CharField(
+        label=_("creation_time"),
+        help_text=_("Creation Time of Level"),
+        read_only=True
+    )
+    update_time = serializers.CharField(
+        label=_("update_time"),
+        help_text=_("Update Time of Level"),
+        read_only=True
+    )
+    email = serializers.CharField(
+        label=_("User email"),
+        help_text=_("Email ID of the User"),
+        source='account_email',
+        read_only=True
+    )
+    first_name = serializers.CharField(
+        label=_("User first name"),
+        help_text=_("First Name of the User"),
+        source='account_firstname',
+        read_only=True
+    )
+    last_name = serializers.CharField(
+        label=_("User last name"),
+        help_text=_("Last Name of the User"),
+        source='account_lastname',
+        read_only=True
+    )
+    tags = serializers.ListField(
+        child=serializers.CharField(),
+        label=_("tags"),
+        help_text=_("Tags"),
+        read_only=True
+    )
+    data_fields = serializers.ListField(
+        child=serializers.CharField(),
+        label=_("data_fields"),
+        help_text=_("Data Fields"),
+        source="datafields",
+        read_only=True
+    )
+    system_count_comments = serializers.BooleanField(
+        label=_("system_count_comments"),
+        help_text=_("Should System Count Comments?"),
+        read_only=True
+    )
+    updated = serializers.BooleanField(
+        label=_("update"),
+        help_text=_("Is Updated?"),
+        source="update",
+        read_only=True
+    )
+    links = serializers.JSONField(
+        label=_("links"),
+        help_text=_("Links consisting of system users and Data Fields"),
+        default={'system_users': [], 'datafields': []},
+        read_only=True
+    )
+    r_fields = serializers.JSONField(
+        label=_("r_fields"),
+        help_text=_("R Fields"),
+        source="rfields",
+        default={}
+    )
+    legacy_rights = serializers.ListField(
+        child=serializers.IntegerField(),
+        label=_("List of legacy rights"),
+        help_text=_("List of legacy rights associated with the group"),
+        source='acls',
+        read_only=True
+    )
+    data = BIMLevelSerializer(
+        label=_("Layer Data"),
+        help_text=_("Data of the Layer"),
+        read_only=True
+    )
+
+
+class BIMModelItemsSerializer(serializers.Serializer):
+    items = BIMModelSerializer(
+        label=_("items"),
+        help_text=_("BIM Model Items"),
+        read_only=True,
+        many=True
+    )
+
+
+class BIMModelLevelInfoItemsSerializer(serializers.Serializer):
+    items = BIMSystemLevelInfoSerializer(
+        label=_("items"),
+        help_text=_("BIM Level Info Items"),
+        read_only=True,
+        many=True
+    )
+
+
+class BIMSystemLevelAllSerializer(serializers.Serializer):
+    levels = BIMLevelSerializer(
+        label=_("levels"),
+        help_text=_("BIM Level"),
+        many=True,
+        read_only=True
+    )
+    models = BIMModelItemsSerializer(
+        label=_("model"),
+        help_text=_("BIM Model"),
+        source="bim_models",
+        read_only=True
+    )
+
+    level_info = BIMModelLevelInfoItemsSerializer(
+        label=_("level_info"),
+        help_text=_("Additional Level Info"),
+        source="ll",
+        read_only=True
+    )
+
+
+class BIMSystemLevelSerializer(serializers.Serializer):
+    model_uuid = serializers.UUIDField(
+        label=_("UUID of model"),
+        help_text=_("UUID Representation of Model ID"),
+        read_only=True,
+        source="key"
+    )
+    uuid = serializers.UUIDField(
+        label=_('uuid'),
+        help_text=_('UUID Representation of System Level ID'),
+        read_only=True,
+        source="object_uuid"
+    )
+    meta_type = serializers.CharField(
+        label=_('meta_type'),
+        help_text=_('Meta Type'),
+        read_only=True
+    )
+    meta_flag = serializers.IntegerField(
+        label=_('meta_flag'),
+        help_text=_("Meta Flag"),
+        read_only=True
+    )
+    data = BIMSystemLevelRequestSerializer(
+        label=_("data"),
+        help_text=_("data of the System Level"),
+        read_only=True
+    )
+
+
+class BIMSystemLevelArchiveSerializer(serializers.Serializer):
+    uuid = serializers.UUIDField(
+        label=_('uuid'),
+        help_text=_('UUID Representation of System Level ID'),
+        read_only=True,
+        source="object_uuid"
+    )
+    recovered = serializers.BooleanField(
+        label=_("recovered"),
+        help_text=_("Is Recovered?"),
+        read_only=True,
+        default=False,
+        source="recover"
+    )
+    success = serializers.BooleanField(
+        label=_("success"),
+        help_text=_("success flag"),
+        read_only=True
+    )
+
+
+class LayerLastRevisionSerializer(BIMLayerSerializer):
+    label = serializers.CharField(
+        label=_('Layer display name'),
+        help_text=_('Human readable name of the layer'),
+        read_only=True,
+        source="display_name"
+    )
+
+    group_uuid = serializers.UUIDField(
+        label=_('Group UUID'),
+        help_text=_('Universal ID of the group of layers'),
+        read_only=True,
+        source="groupuuid"
+    )
+
+
+class BIMLayerLastRevisionSerializer(serializers.Serializer):
+    last_revision = LayerLastRevisionSerializer(
+        label=_("last_revision"),
+        help_text=_("Last Revision of a Layer"),
+        source="lastRevision",
+        read_only=True,
+        required=False
+    )
+    message = serializers.CharField(
+        label=_("message"),
+        help_text=_("Message from Web Service"),
+        read_only=True
+    )
+    success = serializers.BooleanField(
+        label=_("success"),
+        help_text=_("Success Flag whether True/False"),
+        read_only=True
+    )
+
+
+class BIMParameterValueSerializer(serializers.Serializer):
+    uuid = serializers.UUIDField(
+        label=_("uuid"),
+        help_text=_("Universal ID of the Parameter"),
+        read_only=True
+    )
+    parameter_id = serializers.UUIDField(
+        label=_("parameter_id"),
+        help_text=_("UUID Representation of the Parameter"),
+        read_only=True,
+        source="parameter"
+    )
+    element_id = serializers.UUIDField(
+        label=_("element_id"),
+        help_text=_("UUID Representation of the Element"),
+        read_only=True,
+        source="element"
+    )
+    value = serializers.CharField(
+        label=_("value"),
+        help_text=_("Value of the Parameter"),
+        read_only=True
+    )
+
+
+class BIMReviewUpdateSerializer(serializers.Serializer):
+    """
+    Serializer for updating reviews to objects query parameters
+    """
+    values = serializers.ListField(
+        label=_('values'),
+        help_text=_('List of values to be updated'),
+        child=serializers.JSONField(
+            label=_('value'),
+            help_text=_('Value object with content_key and content_value.Note: content_value depends upon the type of '
+                        'content_key. For some type it is string and for some type it is an object'),
+            default={'content_key': 'progress_state', 'content_value': {'value_index': 0}}
+        )
+    )
+
+
+class BIMReviewCreateCommentSerializer(serializers.Serializer):
+    """
+    Serializer for adding comment to a review
+    """
+    comment = serializers.CharField(
+        label=_('comment'),
+        help_text=_('Comment for a review')
+    )
+
+
+class BIMLayerRevisionRequestSerializer(serializers.Serializer):
+    name = serializers.CharField(
+        label=_("name"),
+        help_text=_("Layer Name"),
+        required=False
+    )
+
+
+class BIMLayerRequestSerializer(serializers.Serializer):
+    is_file_id = serializers.BooleanField(
+        label=_('is file id'),
+        help_text=_('Whether the id is File ID or Layer ID'),
+        source='idFromFile',
+        default=False
+    )
+    name = serializers.CharField(
+        label=_('name'),
+        help_text=_('Layer Name'),
+        required=False
+    )
+    display_name = serializers.CharField(
+        label=_('display name'),
+        help_text=_('Layer Display Name'),
+        required=False
+    )
+    revision = serializers.IntegerField(
+        label=_('revision'),
+        help_text=_('Numeric Revision'),
+        required=False
+    )
+    file = serializers.CharField(
+        label=_('file'),
+        help_text=_('File data( File Hash or File Unique ID'),
+        required=False
+    )
+    model_file = serializers.CharField(
+        label=_('model file'),
+        help_text=_('Model File Hash'),
+        required=False
+    )
+    description = serializers.CharField(
+        label=_('info'),
+        help_text=_('Layer Info'),
+        required=False,
+        source='info'
+    )
+    bounds = serializers.CharField(
+        label=_('bounds'),
+        help_text=_('Layer bounding polynom'),
+        required=False
+    )
+    landmarks = serializers.CharField(
+        label=_('landmarks'),
+        help_text=_('Layer Landmarks'),
+        required=False
+    )
+
+
+class BIMModelFilterRequestSerializer(serializers.Serializer):
+    name = serializers.CharField(
+        label=_('name'),
+        help_text=_('Name of the filter')
+    )
+    content = serializers.CharField(
+        label=_('content'),
+        help_text=_('Content of the filter')
+    )
+
+
+class BIMModelFilterSerializer(serializers.Serializer):
+    filter_id = serializers.UUIDField(
+        label=_('filter id'),
+        help_text=_('Unique Filter ID'),
+        source='uuid'
+    )
+    name = serializers.CharField(
+        label=_('name'),
+        help_text=_('Filter Name')
+    )
+    model_id = serializers.IntegerField(
+        label=_('model id'),
+        help_text=_('Numeric Model ID'),
+        source='modelId'
+    )
+    content = serializers.CharField(
+        label=_('content'),
+        help_text=_('Filter Content')
+    )
+    filter_type = serializers.IntegerField(
+        label=_('filter type'),
+        help_text=_('Numeric Filter Type'),
+        source='type'
+    )
+
+
+class BIMParameterTemplateMetaSerializer(serializers.Serializer):
+    group_label = serializers.CharField(
+        label=_("group_label"),
+        help_text=_("Display Label of the Group for the Parameter"),
+        source="labelgroup",
+        default="General"
+    )
+    value = serializers.ListField(
+        child=serializers.JSONField(),
+        label=_("value"),
+        help_text=_("value in {'key':'value'} format,if selected type is L(LIST)"),
+        source="values"
+    )
+
+
+class BIMParameterTemplateRequestSerializer(BIMParameterTemplateMetaSerializer):
+    name = serializers.CharField(
+        label=_('name'),
+        help_text=_('Name of the Parameter')
+    )
+    type = serializers.ChoiceField(
+        label=_("parameter type"),
+        help_text=_("Select the Parameter Type, T: TEXT, B: BOOLEAN, D: DATE, L: LIST"),
+        choices=["T", "B", "D", "L"],
+        default="T"
+    )
+
+
+class BIMParameterTemplateSerializer(serializers.Serializer):
+    id = serializers.UUIDField(
+        label=_("id"),
+        help_text=_("UUID Representation of ID for Parameter Definition"),
+        source="uuid",
+        read_only=True
+    )
+    name = serializers.CharField(
+        label=_('name'),
+        help_text=_('Name of the Parameter'),
+        read_only=True
+    )
+    private = serializers.BooleanField(
+        label=_("private"),
+        help_text=_("Is Private ?"),
+        read_only=True
+    )
+    archived = serializers.BooleanField(
+        label=_("archived"),
+        help_text=_("Is Archived?"),
+        read_only=True,
+        source="archive"
+    )
+    source_synced = serializers.BooleanField(
+        label=_("source_sync"),
+        help_text=_("Is source synced?"),
+        read_only=True,
+        source="source_sync"
+    )
+    meta_data = BIMParameterTemplateMetaSerializer(
+        label=_("meta_data"),
+        help_text=_("Meta Data about the parameter"),
+        read_only=True,
+        source="meta"
+    )
+    created_by_id = serializers.UUIDField(
+        label=_("UUID of the creator"),
+        help_text=_("UUID of the creator"),
+        read_only=True,
+        source="userid"
+    )
+    type = serializers.CharField(
+        label=_("parameter type"),
+        help_text=_("Selected Parameter Type, T: TEXT, B: BOOLEAN, D: DATE, L: LIST"),
+        read_only=True
+    )
+    creation_date = CastingDateTimeField(
+        label=_("creation_date"),
+        help_text=_("Created Date of the parameter"),
+        read_only=True
+    )
+    r_bim_field = serializers.BooleanField(
+        label=_('r_bim_field'),
+        help_text=_('Bim Field'),
+        read_only=True,
+        source='rbimfield'
+    )
+
+
+class BIMUpdateLayerRevisionRequestSerializer(BIMLayerRevisionRequestSerializer):
+    revision = serializers.IntegerField(
+        label=_("revision"),
+        help_text=_("Layer Revision")
+    )
+    id = serializers.UUIDField(
+        label=_("guid"),
+        help_text=_("Global UUID of Layer"),
+        source='guid'
+    )
+
+
+class BIMUpdateLayerRevisionSerializer(BIMUpdateLayerRevisionRequestSerializer):
+    layer_id = serializers.IntegerField(
+        label=_('layer id'),
+        help_text=_('Numeric Layer ID'),
+        source='layers_id'
+    )
+
+
+class BIMModelStatisticsInfoSerializer(serializers.Serializer):
+    id = serializers.IntegerField(
+        label=_("id"),
+        help_text=_("Numeric ID"),
+        read_only=True
+    )
+    count = serializers.IntegerField(
+        label=_("count"),
+        help_text=_("Total Count"),
+        read_only=True
+    )
+    volume = serializers.FloatField(
+        label=_("volume"),
+        help_text=_("Total Volume"),
+        read_only=True,
+        source="Volume"
+    )
+    label = serializers.CharField(
+        label=_("display name"),
+        help_text=_("Display Name"),
+        read_only=True
+    )
+    name = serializers.CharField(
+        label=_("name"),
+        help_text=_("Name"),
+        read_only=True
+    )
+    elevation = serializers.FloatField(
+        label=_("level elevation"),
+        help_text=_("Level Elevation"),
+        read_only=True
+    )
+
+
+class BIMModelStatisticsCategoryAndElementSerializer(BIMModelStatisticsInfoSerializer):
+    elevation = None
+    id = None
+    name = None
+
+
+class BIMModelStatisticsLevelSerializer(BIMModelStatisticsInfoSerializer):
+    count = None
+    volume = None
+
+
+class BIMModelStatisticsParameterSerializer(BIMModelStatisticsLevelSerializer):
+    elevation = None
+
+
+class BIMModelStatisticsTabsSerializer(serializers.Serializer):
+    categories = serializers.JSONField(
+        label=_("categories"),
+        help_text=_("Category Information for Tabs"),
+        read_only=True
+    )
+    elements = serializers.JSONField(
+        label=_("elements"),
+        help_text=_("Element Information for Tabs"),
+        read_only=True
+    )
+    levels = serializers.JSONField(
+        label=_("levels"),
+        help_text=_("Level Information for Tabs"),
+        read_only=True
+    )
+    parameters = serializers.JSONField(
+        label=_("parameters"),
+        help_text=_("Parameter Information for Tabs"),
+        read_only=True
+    )
+
+
+class BIMModelStatisticsSerializer(serializers.Serializer):
+    version = serializers.FloatField(
+        label=_("version"),
+        help_text=_("Statistics Version"),
+        read_only=True
+    )
+    categories = BIMModelStatisticsCategoryAndElementSerializer(
+        label=_("categories"),
+        help_text=_("Category Details"),
+        read_only=True,
+        many=True
+    )
+    elements = BIMModelStatisticsCategoryAndElementSerializer(
+        label=_("elements"),
+        help_text=_("Element Details"),
+        read_only=True,
+        many=True
+    )
+    levels = BIMModelStatisticsLevelSerializer(
+        label=_("levels"),
+        help_text=_("Level Details"),
+        read_only=True,
+        many=True
+    )
+    parameters = BIMModelStatisticsParameterSerializer(
+        label=_("parameters"),
+        help_text=_("Parameter Details"),
+        read_only=True,
+        many=True
+    )
+    tabs = BIMModelStatisticsTabsSerializer(
+        label=_("tabs"),
+        help_text=_("Tab Details"),
+        read_only=True
+    )
+
+
+class BIMSettingsRequestSerializer(serializers.Serializer):
+    setting_type = serializers.IntegerField(
+        label=_('setting type'),
+        help_text=_('Numeric Setting Type')
+    )
+    setting_key = serializers.CharField(
+        label=_('setting key'),
+        help_text=_('Setting Key')
+    )
+    setting_value = serializers.CharField(
+        label=_('setting value'),
+        help_text=_('Setting Value')
+    )
+
+
+class BIMSettingsQuerySerializer(serializers.Serializer):
+    setting_type = serializers.IntegerField(
+        label=_('setting type'),
+        help_text=_('Numeric Setting Type')
+    )
+    setting_key = serializers.CharField(
+        label=_('setting key'),
+        help_text=_('Setting Key')
+    )
+
+
+class BIMSettingsSerializer(serializers.Serializer):
+    value = serializers.CharField(
+        label=_('value'),
+        help_text=_('Setting Value'),
+        required=False
+    )
+
+
+class BIMStatusAllSerializer(serializers.Serializer):
+    uuid = serializers.UUIDField(
+        label=_('element uuid'),
+        help_text=_('Universal ID of Element'),
+        read_only=True,
+        source='element_uuid'
+    )
+
+    status = serializers.CharField(
+        label=_('status'),
+        help_text=_('Status'),
+        read_only=True
+    )
+
+    date = serializers.DateField(
+        label=_('date'),
+        help_text=_('Date'),
+        read_only=True
+    )
+
+
+class BIMFieldDrawingEmbeddedSerializer(serializers.Serializer):
+    drawing_id = serializers.UUIDField(
+        label=_('drawing id'),
+        help_text=_('Drawing ID'),
+        source='drawing_uuid',
+        required=False
+    )
+    label = serializers.CharField(
+        label=_('label'),
+        help_text=_('Drawing label'),
+        required=False
+    )
+    category = serializers.CharField(
+        label=_('category'),
+        help_text=_('Drawing Category'),
+        required=False
+    )
+    file_path = serializers.CharField(
+        label=_('file path'),
+        help_text=_('Drawing File Path'),
+        source='pdf_path',
+        required=False
+    )
+    creation_time = serializers.DateTimeField(
+        label=_('creation time'),
+        help_text=_('Drawing Creation Time'),
+        required=False
+    )
+    update_time = serializers.DateTimeField(
+        label=_('update time'),
+        help_text=_('Drawing Update Time'),
+        required=False
+    )
+
+
+class BIMFieldDrawingCategorySerializer(serializers.Serializer):
+    label = serializers.CharField(
+        label=_('label'),
+        help_text=_('Category Label'),
+        required=False
+    )
+
+
+class BIMFieldDrawingSerializer(serializers.Serializer):
+    """
+    Serializer for BIM Field Drawings
+    """
+    drawings = serializers.ListField(
+        label=_('drawings'),
+        help_text=_('List of drawing'),
+        read_only=True,
+        child=BIMFieldDrawingEmbeddedSerializer()
+    )
+    categories = serializers.ListField(
+        label=_('categories'),
+        help_text=_('List of category'),
+        read_only=True,
+        child=BIMFieldDrawingCategorySerializer()
+    )
+
+
+class BIMAdvanceFieldDrawingEmbeddedSerializer(serializers.Serializer):
+    file_path = serializers.CharField(
+        label=_('file path'),
+        help_text=_('Drawing File path'),
+        required=False
+    )
+    transform_data = serializers.SerializerMethodField(
+        label=_('transform'),
+        help_text=_('Drawing Transform Data'),
+        source='transform',
+        required=False
+    )
+    points = serializers.SerializerMethodField(
+        label=_('points'),
+        help_text=_('Drawing Points'),
+        required=False
+    )
+    index = serializers.CharField(
+        label=_('index'),
+        help_text=_('Drawing Index'),
+        source='levelIndex',
+        required=False
+    )
+    unit_scale = serializers.FloatField(
+        label=_('unit scale'),
+        help_text=_('Drawing Unit Scale'),
+        source='unitScaling',
+        required=False
+    )
+    dimension_scale = serializers.CharField(
+        label=_('dimension scale'),
+        help_text=_('Drawing Dimension Scale'),
+        source='dimensionsScaling',
+        required=False
+    )
+    sub_region = serializers.BooleanField(
+        label=_('sub region'),
+        help_text=_('Is Sub Region'),
+        source='isSubRegion',
+        required=False
+    )
+    extension = serializers.CharField(
+        label=_('extension'),
+        help_text=_('Drawing File Extension'),
+        required=False
+    )
+    system_tags = serializers.ListField(
+        label=_('system tags'),
+        help_text=_('List of System Tags'),
+        child=serializers.CharField(),
+        required=False
+    )
+
+    @staticmethod
+    def get_transform_data(obj):
+        if obj.get('transform'):
+            try:
+                json_data = json.loads(obj.get('transform'))
+                return json_data
+            except json.JSONDecodeError:
+                pass
+        return None
+
+    @staticmethod
+    def get_points(obj):
+        if obj.get('points'):
+            try:
+                json_data = json.loads(obj.get('points'))
+                return json_data
+            except json.JSONDecodeError:
+                pass
+        return None
+
+
+class BIMAdvanceFieldDrawingCategorySerializer(serializers.Serializer):
+    category_id = serializers.UUIDField(
+        label=_('category id'),
+        help_text=_('Unique Category ID'),
+        source='category_uuid',
+        required=False
+    )
+    label = serializers.CharField(
+        label=_('label'),
+        help_text=_('Category Label'),
+        required=False
+    )
+
+
+class BIMAdvancedFieldDrawingSerializer(serializers.Serializer):
+    """
+    Serializer for BIM Advanced Field Drawings
+    """
+    drawings = serializers.ListField(
+        label=_('drawings'),
+        help_text=_('List of drawing'),
+        read_only=True,
+        child=BIMAdvanceFieldDrawingEmbeddedSerializer()
+    )
+    categories = serializers.ListField(
+        label=_('categories'),
+        help_text=_('List of category'),
+        read_only=True,
+        child=BIMAdvanceFieldDrawingCategorySerializer()
+    )
+
+
+class BIMElementResponseSerializer(serializers.Serializer):
+    """
+    Serializer for Retrieve BIM Get Element
+    """
+    id = serializers.UUIDField(
+        label=_('id'),
+        help_text=_('UUID of Element'),
+        read_only=True,
+        source='uuid'
+    )
+    name = serializers.CharField(
+        label=_('name'),
+        help_text=_('Name'),
+        read_only=True
+    )
+    model_id = serializers.IntegerField(
+        label=_('model id'),
+        help_text=_('Model Id of Element'),
+        read_only=True,
+    )
+
+    parent_element_uuid = serializers.UUIDField(
+        label=_('parent element uuid'),
+        help_text=_('Universal ID for Parent Element'),
+        read_only=True,
+    )
+
+    creation_time = serializers.DateTimeField(
+        label=_('creation time'),
+        help_text=_('Time Creation'),
+        read_only=True,
+    )
+
+    geometry_info = serializers.CharField(
+        label=_('geometry info'),
+        help_text=_('Geometry Info for Element'),
+        read_only=True,
+        source='geometry'
+    )
+
+
+class BIMElementRequestSerializer(serializers.Serializer):
+    set_flag = serializers.IntegerField(
+        label=_('set_flag'),
+        help_text=_('Set Flag'),
+        source='flag',
+        required=False
+    )
+
+
+class BIMLayerRecoverSerializer(BIMLayerSerializer):
+    id = serializers.UUIDField(
+        label=_("Layer UUID"),
+        help_text=_('ID of the layer'),
+        read_only=True,
+        source='layer_uuid'
+    )
+    revision = serializers.IntegerField(
+        label=_("revision"),
+        help_text=_("revision"),
+        read_only=True
+    )
+
+
+class BIMFilterRequestSerializer(BIMFilterSerializer):
+    field_type = serializers.ChoiceField(
+        label=_("field_type"),
+        help_text=_("Select Field Type if Required"),
+        choices=['param_templates'],
+        required=False,
+        source="rtype",
+        allow_blank=True,
+        default=""
+    )

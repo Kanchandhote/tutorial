@@ -1,0 +1,86 @@
+class BIMKrustySetupViewSet(PaginatedViewSet):
+    @extend_schema(
+        summary=_("List of BIM Krusty Setups"),
+        description=_("List of BIM Krusty Setups"),
+        parameters=project_parameters,
+        # TODO Could not Find Response Schema for this API , will write the serializer once get the response
+        responses={200: OpenApiTypes.OBJECT, 503: ServiceErrorSerializer},
+        tags=['bim', ],
+        methods=["GET"],
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        List of BIM Krusty Setups on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        setup = BIMKrustySetup.list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+        )
+        return Response(
+            data=setup,
+            status=status.HTTP_200_OK
+        )
+
+##
+class BIMKrustySetup(PaginatedModel):
+    @staticmethod
+    def list(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None
+    ):
+        """
+        List of BIM Krusty Setups
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        """
+        kbkss = KairnialBIMKrustySetupService(client_id=client_id, token=token, project_id=project_id,
+                                              user_id=user_id)
+        return kbkss.list()
+
+##
+class KairnialBIMKrustySetupService(KairnialWSService):
+    """
+    Service for BIM Krusty Setups
+    """
+    service_domain = 'krustybim'
+
+    def list(self):
+        """
+        List of BIM Krusty Setups
+        :return:
+        """
+        return self.call(action='getKrustySetups', parameters=[{}])
+###
+class BIMFilterRequestSerializer(BIMFilterSerializer):
+    field_type = serializers.ChoiceField(
+        label=_("field_type"),
+        help_text=_("Select Field Type if Required"),
+        choices=['param_templates'],
+        required=False,
+        source="rtype",
+        allow_blank=True,
+        default=""
+    )
+
+##
+    def test_list_krusty_setups(self):
+        """
+        Test List of BIM Krusty Setups
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/setups/krusty/')
+        self.assertEqual(resp.status_code, 200)

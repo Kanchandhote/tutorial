@@ -1,0 +1,72 @@
+############################Viewsets.py######################
+class GroupViewSet(ViewSet):
+@extend_schema(
+        summary=_("Add users to a group"),
+        description=_("Add an existing project user to the group"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID of the group")),
+        ],
+        request=GroupAddUserSerializer,
+        responses={207: MultiResponseSerializer,
+                   503: ServiceErrorSerializer},
+        tags=['admin/groups', ],
+        methods=["POST"]
+    )
+    @handle_ws_error
+    @action(['POST'], detail=True, url_path='users', url_name="add_users_to_group")
+    def add_users(self, request, client_id: str, project_id: str, pk: str):
+        """
+        Add a list of users to a group
+        :param request: HTTPRequest
+        :param client_id: ID of the client
+        :param project_id: ID of the project
+        :param pk: UUID of the group
+        """
+
+        group_list = Group.list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            filters=request.GET
+        )
+        group = [g for g in group_list if g.get('guid', '') == pk]
+        if not group:
+            return Response(data=_('Group Not Found'), status=status.HTTP_404_NOT_FOUND)
+        serializer = GroupSerializer(group[0])
+        user_list = map(int, request.data.get('users'))
+        errors = Group.add_users(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            pk=serializer.data.get('num_id'),
+            user_list=user_list
+        )
+        return Response(json.dumps(errors), content_type=JSON_CONTENT_TYPE, status=status.HTTP_207_MULTI_STATUS)
+
+##########################################test.py#######################
+     def test_group_add_users(self):
+        """
+        Test inviting a user to group
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+            use_reverse=True
+        )
+        resp = kc.post(
+            'groups-add_users_to_group', reverse_kwargs={'pk': '48f944d3-bcb2-11e7-b7a1-fa163e5e5b59'},
+            content_type=JSON_CONTENT_TYPE)
+        self.assertEqual(resp.status_code, 404)
+
+
+
+
+
+
+
+
+

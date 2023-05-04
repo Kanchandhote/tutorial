@@ -1,0 +1,93 @@
+@extend_schema(
+        summary=_("Delete Linked Object"),
+        description=_("Delete Linked Object on a Project"),
+        parameters=project_parameters + [
+            OpenApiParameter("object_uuid", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("Unique ID of Link Object")),
+            DocumentDeleteLinkObjectRequestSerializer
+        ],
+        responses={204: None, 400: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['dms/documents', ],
+        methods=["DELETE"]
+    )
+    @action(methods=['DELETE'], detail=False, url_path='(?P<object_uuid>[^/.]+)/link_object',
+            url_name='(?P<object_uuid>[^/.]+)/link_object', )
+    @handle_ws_error
+    def delete_linked_object(self, request: TokenRequest, client_id: str, project_id: str, pk: str):
+        """
+        Delete Linked Files on a Project
+        :param request: TokenRequest
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param serialized_data : Validated From DocumentDeleteLinkObjectRequestSerializer
+        :param pk: Unique Object ID
+        :return:
+        """
+        dlors = DocumentDeleteLinkObjectRequestSerializer(data=request.GET)
+        if not dlors.is_valid():
+            return Response(dlors.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+        deleted = Document.delete_linked_object(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            serialized_data=dlors.validated_data,
+            object_uuid=pk,
+        )
+        if deleted['success']:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(_("Unable to delete Linked Object"),
+                            status=status.HTTP_406_NOT_ACCEPTABLE)
+############################################################################################
+@staticmethod
+    def delete_linked_object(client_id: str,
+                             token: str,
+                             project_id: str,
+                             object_uuid: str,
+                             user_id: str = None,
+                             serialized_data: dict = None
+                             ):
+        """
+        Delete Linked Object on a project
+        :param client_id: ID of the client
+        :param token: Access token#
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param object_uuid: Unique Link object ID
+        :param serialized_data : Validated From DocumentDeleteLinkObjectRequestSerializer
+        """
+        kbrs = KairnialDocumentService(client_id=client_id, token=token, user_id=user_id,
+                                       project_id=project_id)
+        return kbrs.delete_linked_object(object_uuid=object_uuid, serialized_data=serialized_data)
+##########################################################################################################
+    def delete_linked_object(self, object_uuid: str, serialized_data: dict):
+        """
+        Delete Linked Object on a project
+        :param object_uuid: Unique Link object ID
+        :param serialized_data : Validated From DocumentDeleteLinkObjectRequestSerializer
+        """
+        serialized_data['object_uuid_bin'] = object_uuid
+        return self.call(service='krustyDelegate', action='archive_link_object',
+                         parameters=[serialized_data])
+########################################################################
+class DocumentDeleteLinkObjectRequestSerializer(serializers.Serializer):
+    """
+    Serializer for Delete Link Object
+    """
+    id = serializers.UUIDField(
+        label=_('id'),
+        help_text=_('Unique id Of Destination Object'),
+        source='object_dest_uuid'
+    )
+    object_type = serializers.CharField(
+        label=_("object_type"),
+        help_text=_("Type of Object"),
+    )
+    destination_type = serializers.CharField(
+        label=_("destination_type"),
+        help_text=_("Type of Object Destination"),
+        source="object_dest_type"
+    )

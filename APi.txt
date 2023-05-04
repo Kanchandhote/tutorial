@@ -1,0 +1,335 @@
+router.register(r'instances', ControlInstanceViewSet, basename='control_instances')
+########################Viewset.py#########################################
+@extend_schema(
+        summary=_("Get Template By Instance Uuid"),
+        description=_("Get Template By Instance Uuid on Project"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, location='path',
+                             description=_("Unique Instance ID")),
+        ],
+        responses={200: ControlTemplateByInstanceUuidSerializer, 503: ServiceErrorSerializer},
+        tags=['controls/instances', ],
+        methods=["GET"]
+    )
+    @action(methods=["GET"], detail=True, url_path='templates', url_name='template_by_instance_uuid')
+    @handle_ws_error
+    def get_template_by_instance(self, request: TokenRequest, client_id: str, project_id: str, pk: str):
+        """
+       Get Template By Instance Uuid on Project
+       :param request:
+       :param client_id: Client ID token
+       :param project_id: Project RGOC ID
+       :param pk: Unique Instance ID
+       :return:
+       """
+        template_instance = ControlInstance.get_template_by_instance(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            instance_uuid=pk
+        )
+        serializer = ControlTemplateByInstanceUuidSerializer(template_instance.get('items', []), many=True)
+        # print("template_instance:::::::", template_instance)
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
+
+######################Models.py######################################
+
+@staticmethod
+    def get_template_by_instance(
+            client_id: str,
+            token: str,
+            project_id: str,
+            instance_uuid: str,
+            user_id: str = None
+    ):
+        """
+        Get Template By Instance Uuid on Project
+        """
+        kfcis = KairnialFormControlInstanceService(client_id=client_id, token=token, project_id=project_id,
+                                                   user_id=user_id)
+        return kfcis.get_template_by_instance(instance_uuid=instance_uuid)
+
+
+##########################Service.py#################################
+    def get_template_by_instance(self, instance_uuid: str):
+        """
+        Get Template By Instance Uuid on Project
+        :param instance_uuid: Unique ID Instance
+        """
+
+        parameters = [{'instanceUuid': instance_uuid}]
+        return self.call(action='getTemplateByInstanceUuid', parameters=parameters)
+
+###############################Serializer.py####################
+class ControlTemplateSetupSerializer(ControlTemplateContentSerializer):
+    """
+    Serializer For Template BY Instance UUID Setup
+    """
+    pre_fix = serializers.CharField(
+        label=_('prefix'),
+        help_text=_('prefix'),
+        source='prefix',
+        read_only=True
+    )
+    email_new_ans = serializers.BooleanField(
+        label=_('email'),
+        help_text=_('Send Email New Answer'),
+        source='sendEmailNewAnswer',
+        read_only=True
+    )
+    type_facture = serializers.CharField(
+        label=_('type facture'),
+        help_text=_('Type Facture'),
+        source='typeFacture',
+        read_only=True
+    )
+
+    email_new_items = serializers.BooleanField(
+        label=_('email'),
+        help_text=_('Send Email New Answer'),
+        source='sendEmailNewItems',
+        read_only=True
+    )
+    dossiers_fichiers = serializers.CharField(
+        label=_('dossiers fichiers'),
+        help_text=_('Dossiers Fichiers'),
+        source='dossiersFichiers',
+        read_only=True
+    )
+    contact_cci = serializers.ListField(
+        label=_('contact cci'),
+        help_text=_('Contact CCI'),
+        source='contactCCI',
+        read_only=True
+    )
+    objects_list = serializers.ListField(
+        label=_('ObjectsListes'),
+        help_text=_('ObjectsListes'),
+        source='ObjectsListes',
+        read_only=True
+    )
+    show_in_home = serializers.BooleanField(
+        label=_('show in home'),
+        help_text=_('Show In Homer'),
+        source='showInHome',
+        read_only=True
+    )
+    add_page_count = serializers.IntegerField(
+        label=_('Add Page Count'),
+        help_text=_('Add Page Count'),
+        source='addPageCount',
+        read_only=True
+    )
+    session_template = serializers.CharField(
+        label=_('session template'),
+        help_text=_('Session Template'),
+        source='sessionTemplate',
+        read_only=True
+    )
+
+    icon = BIMReviewIconStyleSerializer(
+        label=_('icon'),
+        help_text=_('Icon'),
+        read_only=True
+    )
+    i_cone = serializers.CharField(
+        label=_('icone'),
+        help_text=_('icone'),
+        source="icone",
+        read_only=True
+    )
+    show_in_tasks = serializers.BooleanField(
+        label=_('show in tasks'),
+        help_text=_('Show In Tasks'),
+        source='showInTasks',
+        read_only=True
+    )
+    force_choose_contact = serializers.BooleanField(
+        label=_('force choose contact'),
+        help_text=_('Force Choose Contact'),
+        source='forceChooseContact',
+        read_only=True
+    )
+    meaning = serializers.CharField(
+        label=_('meaning'),
+        help_text=_('meaning'),
+        source="sens",
+        read_only=True
+    )
+    add_item = serializers.CharField(
+        label=_('add_item'),
+        help_text=_('add item'),
+        source="ajouterItem",
+        read_only=True
+    )
+    type_documents = serializers.CharField(
+        label=_('type_documents'),
+        help_text=_('Type Documents'),
+        source="typeDocToUse",
+        read_only=True
+    )
+    has_subject_comment = serializers.BooleanField(
+        label=_('Has Subject Comment'),
+        help_text=_('Has Subject Comment'),
+        source="hasSubjectComment",
+        read_only=True
+    )
+
+    has_subject_item = serializers.BooleanField(
+        label=_('has subject item'),
+        help_text=_('Has Subject Item'),
+        source='hasSubjectItem',
+        read_only=True
+    )
+    add_element_allowed = serializers.BooleanField(
+        label=_('add element allowed'),
+        help_text=_('Add Element Allowed'),
+        source='addElementAllowed',
+        read_only=True
+    )
+    limit_number = serializers.BooleanField(
+        label=_('limit number'),
+        help_text=_('Limit Number'),
+        source='limitNumber',
+        read_only=True
+    )
+    add_answer = serializers.CharField(
+        label=_('add_answer'),
+        help_text=_('Add Answer'),
+        source='ajouterAnswer',
+        read_only=True
+    )
+    can_be_archived = serializers.BooleanField(
+        label=_('can be archived'),
+        help_text=_('Can Be Archived'),
+        source='canBeArchived',
+        read_only=True
+    )
+    client_f = serializers.CharField(
+        label=_('client f'),
+        help_text=_('Client F'),
+        source='clientF',
+        read_only=True
+    )
+    lock_col1 = serializers.BooleanField(
+        label=_('lock Col1'),
+        help_text=_('lock Col1'),
+        source='lockCol1',
+        read_only=True
+    )
+    templates = serializers.ListField(
+        label=_('templates'),
+        help_text=_('templates'),
+        read_only=True
+    )
+    contact_a = serializers.ListField(
+        label=_('contact a'),
+        help_text=_('Contact A'),
+        source='contactA',
+        read_only=True
+    )
+    contact_ae = serializers.BooleanField(
+        label=_('contact ae'),
+        help_text=_('Contact AE'),
+        source='contactAE',
+        read_only=True
+    )
+    ordre_invers = serializers.BooleanField(
+        label=_('contact A'),
+        help_text=_('contact A'),
+        source='ordreInvers',
+        read_only=True
+    )
+    contact_cc = serializers.ListField(
+        label=_('contact cc'),
+        help_text=_('Contact CC'),
+        source='contactCC',
+        read_only=True
+    )
+
+
+class ControlTemplateByInstanceUuidSerializer(serializers.Serializer):
+    """
+    Serializer for Control Template By Instance Uuid
+    """
+    uuid = serializers.UUIDField(
+        label=_("uuid"),
+        help_text=_("Control Template By instance UUID"),
+        read_only=True
+    )
+    id = serializers.IntegerField(
+        label=_("Control instance ID"),
+        help_text=_("Numeric ID of the control instance"),
+        read_only=True
+    )
+    count = serializers.IntegerField(
+        label=_("count"),
+        help_text=_("Count"),
+        read_only=True
+    )
+
+    central_id = serializers.IntegerField(
+        label=_("Central ID"),
+        help_text=_("Numeric Central ID"),
+        source="centralId",
+        read_only=True
+    )
+    title = serializers.CharField(
+        label=_('title'),
+        help_text=_('title'),
+        read_only=True
+    )
+    setup = ControlTemplateSetupSerializer(
+        label=_('setup'),
+        help_text=_('Setup Details Control Template'),
+        read_only=True
+    )
+    structure = ControlTemplateContentSerializer(
+        label=_('structure'),
+        help_text=_('List of structure'),
+        read_only=True,
+    )
+    control_setup = serializers.CharField(
+        label=_('control Setup'),
+        help_text=_('Control Setup'),
+        read_only=True,
+        source='controlSetup'
+    )
+    creator = serializers.CharField(
+        label=_('creator'),
+        help_text=_('creator'),
+        read_only=True,
+    )
+    create_date = serializers.DateField(
+        label=_('create_date'),
+        help_text=_('create_date'),
+        read_only=True,
+        source='createDate'
+    )
+    update_date = serializers.DateField(
+        label=_('update Date'),
+        help_text=_('Update Date'),
+        read_only=True,
+        source='updateDate'
+    )
+    email = serializers.EmailField(
+        label=_('email'),
+        help_text=_('email'),
+        read_only=True,
+    )
+    tags = serializers.ListField(
+        label=_('tags'),
+        help_text=_('tags'),
+        read_only=True,
+    )
+    tags_full_values = serializers.ListField(
+        label=_('tags full values'),
+        help_text=_('Tags Full Values'),
+        read_only=True,
+    )
+    total = serializers.IntegerField(
+        label=_('total'),
+        help_text=_('total'),
+        read_only=True,
+    )

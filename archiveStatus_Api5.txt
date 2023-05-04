@@ -1,0 +1,89 @@
+#
+router.register(r'element/(?P<element_id>[[^/.]+)/status', BIMStatusViewSet, basename='bim_status')
+
+#
+class BIMStatusViewSet(PaginatedViewSet):
+    """
+    Kairnial Archive BIM Status
+    """
+
+    @extend_schema(
+        summary=_('Kairnial BIM Status By Element ID'),
+        description=_('Kairnial BIM Status By Element Id'),
+        parameters=project_parameters + [
+            OpenApiParameter(name='element_id', type=OpenApiTypes.STR, location='path',
+                             description=_("Kairnial Element ID ")),
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID Representation Element ID")),
+        ],
+        responses={204: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim', ],
+        methods=["DELETE"]
+    )
+    @handle_ws_error
+    def destroy(self, request: TokenRequest, project_id: str, client_id: str, pk: str, element_id: str):
+        """
+        Archive BIM Status by Element ID
+        """
+        archived = BIMElement.destroy_status(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            element_id=element_id,
+            status_id=pk
+        )
+        if archived:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(_("BIM Status could not be archived"),
+                            status=status.HTTP_406_NOT_ACCEPTABLE)
+
+# Model
+
+@staticmethod
+    def destroy_status(
+            client_id: str,
+            project_id: str,
+            token: str,
+            element_id: str,
+            status_id: str = None,
+    ):
+        """
+        Delete BIM Status by Element
+        :param client_id: ID of the Client
+        :param project_id: RGOC Code of the Project
+        :param token: Access Token
+        :param element_id: Element ID to Archive BIM Status
+        :param status_id: pk
+        :return
+        """
+        kbss = KairnialBIMStatusService(project_id=project_id, client_id=client_id, token=token)
+        return kbss.destroy(element_id=element_id, status_id=status_id)
+
+#
+class KairnialBIMStatusService(KairnialWSService):
+    def destroy(self, element_id: str, status_id: str):
+        """
+        Archive BIM Status from By Element ID
+        :param element_id: ElementId for Archive BIM Status
+        :param status_id: status_id of the Archive BIM Status
+        """
+        return self.call(
+            action='archiveStatus',
+            parameters=[{"element_id": element_id, "status_id": status_id}]
+        )
+
+#test
+    def test_delete_status_by_element(self):
+        """
+        Test Delete To a  Status by Kairnial Element
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.delete(
+            'bim/element/3b8fc797-187b-46df-bf07-33718bf9fa8f/status/2266b868-4938-11ec-87cc-15e2709e3978/'
+        )
+        self.assertEqual(resp.status_code, 204)

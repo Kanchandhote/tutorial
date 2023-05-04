@@ -1,0 +1,1134 @@
+"""
+Kairnial BIM models
+"""
+import json
+
+from kl_common.models import PaginatedModel
+
+from dynamics_apis.bim.services import KairnialBIMLayerService, KairnialBIMAreaService, \
+    KairnialBIMGeometryElementService, \
+    KairnialBIMModelService, KairnialBIMExportService, KairnialBIMDefectModelService, \
+    KairnialBIMFilterService, KairnialBIMSnapshotService, KairnialBIMParameterTemplateService, \
+    KairnialBIMSystemLevelService, KairnialBIMReviewService, KairnialBIMModelFilterService, \
+    KairnialBIMSettingsService, KairnialBIMElementService, KairnialBIMStatusService, KairnialBIMFieldDrawingService, \
+    KairnialBIMElementGeometryService
+
+
+class Layer(PaginatedModel):
+    """
+    Kairnial BIM Layer
+    """
+
+    @staticmethod
+    def list(
+            client_id: str,
+            token: str,
+            project_id: str,
+            filters: dict = None,
+            user_id: str = None
+    ):
+        """
+        List BIM Layers
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param filters: serialized values from a BIMLayerQuerySerializer
+        :param user_id: ID of the user
+        :return:
+        """
+        kbl = KairnialBIMLayerService(client_id=client_id, token=token, project_id=project_id,
+                                      user_id=user_id)
+        layers = kbl.list(filters=filters)
+        if model_uuid := filters.get('model_uuid'):
+            layers = [l for l in layers if l.get('modeluuid') == model_uuid]
+        if name := filters.get('name'):
+            layers = [l for l in layers if l.get('name') and name.lower() in l.get('name').lower()]
+        if display_name := filters.get('label'):
+            layers = [l for l in layers
+                      if l.get('display_name')
+                      and display_name.lower() in l.get('display_name').lower()]
+        # Ensure original_file is an array
+        for i, layer in enumerate(layers):
+            if type(layer.get('original_file')) == str:
+                layers[i]['original_file'] = [layer.get('original_file'), ]
+            try:
+                layers[i]['landmarks'] = json.loads(layer.get('landmarks') or '{}')
+            except json.JSONDecodeError:
+                layers[i]['landmarks'] = {}
+        return layers
+
+    @staticmethod
+    def delete(
+            client_id: str,
+            token: str,
+            project_id: str,
+            layer_id: int,
+            model_id: int,
+            user_id: str = None
+    ):
+        """
+        Archive a Bim Layer
+        """
+        kbl = KairnialBIMLayerService(
+            client_id=client_id,
+            token=token,
+            user_id=user_id,
+            project_id=project_id
+        )
+        return kbl.delete(layer_id=layer_id, model_id=model_id)
+
+    @staticmethod
+    def get_layer_last_revision(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            guid: str = None
+    ):
+        """
+         Get BIM Layer Last Revision on a project
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param guid: Universal Layer ID
+        :return:
+        """
+        kbl = KairnialBIMLayerService(client_id=client_id, token=token, project_id=project_id,
+                                      user_id=user_id)
+
+        return kbl.get_layer_last_revision(guid=guid)
+
+    @staticmethod
+    def statistics(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            layer_id: str = None
+    ):
+        """
+         Get Kairnial BIM Model Statistics
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param layer_id: Layer ID
+        :return:
+         """
+        kbl = KairnialBIMLayerService(client_id=client_id, token=token, project_id=project_id,
+                                      user_id=user_id)
+        model_stats = kbl.statistics(layer_id=layer_id)
+        if "items" in model_stats:
+            return model_stats.get("items")
+
+        return model_stats
+
+    @staticmethod
+    def update(
+            client_id: str,
+            token: str,
+            project_id: str,
+            serialized_data: dict,
+            layer_id: str,
+            model_id: int,
+            user_id: str = None
+    ):
+        """
+         Update BIM Layer
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param serialized_data: BIMLayerRequestSerializer validated data
+        :param layer_id: Layer ID or Unique File ID
+        :param model_id: Numeric Model ID
+        :return:
+        """
+        kbl = KairnialBIMLayerService(client_id=client_id, token=token, project_id=project_id,
+                                      user_id=user_id)
+        return kbl.update(serialized_data=serialized_data, layer_id=layer_id, model_id=model_id)
+
+    @staticmethod
+    def partial_update(
+            client_id: str,
+            token: str,
+            project_id: str,
+            layer_id: int,
+            model_id: int,
+            user_id: str = None,
+            recover: bool = True,
+            serialized_data: dict = None
+    ):
+        """
+         Partially Update BIM Layer
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param layer_id: Numeric Layer ID
+        :param model_id: Numeric Model ID
+        :param recover: Boolean value whether to recover or update layer
+        :param serialized_data: Validated Data from BIMUpdateLayerRevisionRequestSerializer
+        :return:
+        """
+        kbl = KairnialBIMLayerService(client_id=client_id, token=token, project_id=project_id,
+                                      user_id=user_id)
+        return kbl.partial_update(layer_id=layer_id, model_id=model_id, recover=recover,
+                                  serialized_data=serialized_data)
+
+    @staticmethod
+    def revisions(
+            client_id: str,
+            token: str,
+            project_id: str,
+            layer_id: str,
+            user_id: str = None,
+            model_id: int = None,
+            serialized_data: dict = None
+    ):
+        """
+        List BIM Layer Revision
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param model_id: Numeric Model ID
+        :param user_id: ID of the user
+        :param serialized_data: Validated Data from BIMLayerRevisionRequestSerializer
+        :param layer_id: Global Unique Layer ID
+        """
+        kbm = KairnialBIMLayerService(client_id=client_id, token=token, project_id=project_id,
+                                      user_id=user_id)
+        return kbm.revisions(
+            model_id=model_id,
+            layer_id=layer_id,
+            serialized_data=serialized_data
+        ).get("items")
+
+    @staticmethod
+    def layer_to_recover(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            model_id: int = None
+    ):
+        """
+         List Kairnial BIM Layer To Recover on a project
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id: Numeric Model ID
+        :return:
+        """
+        kbl = KairnialBIMLayerService(client_id=client_id, token=token, project_id=project_id,
+                                      user_id=user_id)
+
+        return kbl.layer_to_recover(model_id=model_id)
+
+
+class Area(PaginatedModel):
+    """
+    Kairnial BIM Area
+    """
+
+    @staticmethod
+    def list(
+            client_id: str,
+            token: str,
+            project_id: str,
+            filters: dict = None,
+            user_id: str = None,
+            page_offset: int = 0,
+            page_limit: int = 100,
+    ):
+        """
+        List BIM areas, paginated list
+        """
+        kba = KairnialBIMAreaService(client_id=client_id, token=token, project_id=project_id,
+                                     user_id=user_id)
+        areas = kba.list(filters=filters, page_offset=page_offset, page_limit=page_limit)
+        for i, area in enumerate(areas):
+            try:
+                areas[i]['landmarks'] = json.loads(area.get('landmarks') or '{}')
+            except json.JSONDecodeError:
+                areas[i]['landmarks'] = {}
+        return areas
+
+
+class BIMGeometryElement(PaginatedModel):
+    """
+    Kairnial BIM Element
+    """
+
+    @staticmethod
+    def list(
+            project_id: str,
+            layer_id: str,
+            filters: dict = None,
+            page_offset: int = 0,
+            page_limit: int = 100,
+            **kwargs
+    ):
+        """
+        List BIM elements
+        """
+        kbe = KairnialBIMGeometryElementService(project_id=project_id)
+        elements = kbe.list(
+            layer_id=layer_id,
+            page_offset=page_offset,
+            page_limit=page_limit,
+            filters=filters
+        )
+        return elements
+
+
+class BIMElement(PaginatedModel):
+    """
+    Kairnial BIM Element
+    """
+
+    @staticmethod
+    def list(
+            project_id: str,
+            layer_id: str,
+            filters: dict = None,
+            page_offset: int = 0,
+            page_limit: int = 100,
+            **kwargs
+    ):
+        """
+        List BIM elements
+        """
+        kbe = KairnialBIMElementGeometryService(project_id=project_id)
+        elements = kbe.list(
+            layer_id=layer_id,
+            page_offset=page_offset,
+            page_limit=page_limit,
+            filters=filters
+        )
+        return elements
+
+    @staticmethod
+    def get_parameters(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            element_id: str = None
+    ):
+        """
+         Get BIM Element Parameter Values on a project
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param element_id: Element ID
+        :return:
+        """
+        kbe = KairnialBIMElementService(client_id=client_id, token=token, project_id=project_id,
+                                        user_id=user_id)
+
+        return kbe.get_parameters(element_id=element_id)
+
+    @staticmethod
+    def delete(
+            client_id: str,
+            token: str,
+            project_id: str,
+            element_id: str,
+            user_id: str = None
+    ):
+        """
+        Archive Bim Elements
+        """
+        kbl = KairnialBIMElementService(
+            client_id=client_id,
+            token=token,
+            user_id=user_id,
+            project_id=project_id
+        )
+        return kbl.delete(element_id=element_id)
+
+    @staticmethod
+    def archive_status(
+            client_id: str,
+            project_id: str,
+            token: str,
+            element_id: str,
+            status_id: str,
+            user_id: str = None
+    ):
+        """
+        Delete BIM Status by Element
+        :param client_id: ID of the Client
+        :param project_id: RGOC Code of the Project
+        :param token: Access Token
+        :param element_id: Element ID to Archive BIM Status
+        :param user_id: User ID of the Archive BIM Status
+        :param status_id: pk
+        :return
+        """
+        kbss = KairnialBIMStatusService(project_id=project_id, user_id=user_id, client_id=client_id, token=token)
+        return kbss.archive_status(element_id=element_id, status_id=status_id)
+
+    @staticmethod
+    def get_all_status(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            element_id: str = None
+    ):
+        """
+        BIM Get All Status on a project
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param element_id: Universal ID of the Element
+        :return:
+        """
+        kbl = KairnialBIMStatusService(client_id=client_id, token=token, project_id=project_id,
+                                       user_id=user_id)
+
+        return kbl.get_all_status(element_id=element_id)
+
+    @staticmethod
+    def get_element_by_layer(
+            client_id: str,
+            token: str,
+            project_id: str,
+            model_id: int,
+            layer_id: int,
+            serialized_data: dict,
+            parent_uuid: str,
+            user_id: str = None,
+    ):
+        """
+        List of BIM Element for a Layer
+        """
+        bges = KairnialBIMElementService(project_id=project_id, client_id=client_id, user_id=user_id, token=token)
+        return bges.get_element_by_layer(serialized_data=serialized_data, model_id=model_id, parent_uuid=parent_uuid)
+
+
+class BIMModel(PaginatedModel):
+    """
+    Kairnial BIM Model
+    """
+
+    @staticmethod
+    def list(
+            client_id: str,
+            token: str,
+            project_id: str,
+            filters: dict = None,
+            user_id: str = None
+    ):
+        """
+        List BIM elements
+        """
+        kbm = KairnialBIMModelService(client_id=client_id, token=token, project_id=project_id,
+                                      user_id=user_id)
+        models = kbm.list(filters=filters).get('items')
+        for i, bimmodel in enumerate(models):
+            try:
+                models[i]['landmarks'] = json.loads(bimmodel.get('landmarks') or '{}')
+            except json.JSONDecodeError:
+                models[i]['landmarks'] = {}
+        return models
+
+    @staticmethod
+    def delete(
+            client_id: str,
+            token: str,
+            project_id: str,
+            model_uuid: str = None,
+            user_id: str = None
+    ):
+        """
+        Archive BIM Model
+        """
+        kbm = KairnialBIMModelService(client_id=client_id, token=token, project_id=project_id,
+                                      user_id=user_id)
+
+        return kbm.delete(model_uuid=model_uuid)
+
+    @staticmethod
+    def get_layers_by_model(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            model_id: int = None
+    ):
+        """
+        List BIM Layers
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param model_id: Numeric Model ID
+        :param user_id: ID of the user
+        """
+        kbm = KairnialBIMModelService(client_id=client_id, token=token, project_id=project_id,
+                                      user_id=user_id)
+        return kbm.get_layers_by_model(model_id=model_id)
+
+    @staticmethod
+    def recover(
+            client_id: str,
+            token: str,
+            project_id: str,
+            model_uuid: str = None,
+            user_id: str = None
+    ):
+        """
+        Recover BIM Model
+        """
+        kbm = KairnialBIMModelService(client_id=client_id, token=token, project_id=project_id,
+                                      user_id=user_id)
+
+        return kbm.recover(model_uuid=model_uuid)
+
+
+class BIMFilter(PaginatedModel):
+    """
+    Kairnial BIM Filter
+    """
+
+    @staticmethod
+    def list(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None
+    ):
+        """
+        List BIM Filters
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        """
+        kbf = KairnialBIMFilterService(client_id=client_id, token=token, project_id=project_id,
+                                       user_id=user_id)
+        return kbf.list()
+
+    @staticmethod
+    def archive(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            filter_uuid: str = None
+    ):
+        """
+        Archive BIM Filters
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param filter_uuid : Unique Filter UUID
+        """
+        kbf = KairnialBIMFilterService(client_id=client_id, token=token, project_id=project_id,
+                                       user_id=user_id)
+        return kbf.archive(filter_uuid=filter_uuid)
+
+    @staticmethod
+    def archive_file_filter(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            filter_uuid: str = None
+    ):
+        """
+        Archive BIM File Filters
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param filter_uuid : Unique File Filter UUID
+        """
+        kbf = KairnialBIMFilterService(client_id=client_id, token=token, project_id=project_id,
+                                       user_id=user_id)
+        return kbf.archive_file_filter(filter_uuid=filter_uuid)
+
+    @staticmethod
+    def recover_custom_bim_filter(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            filter_id: str = None
+    ):
+        """
+        Recover Custom BIM Filter
+        :param client_id: Client ID token
+        :param token: Access token
+        :param project_id: Project RGOC ID
+        :param user_id: ID of the user
+        :param filter_id : Unique BIM Custom Filter ID
+        """
+        kbf = KairnialBIMFilterService(client_id=client_id, token=token, project_id=project_id,
+                                       user_id=user_id)
+        return kbf.recover_custom_bim_filter(filter_id=filter_id)
+
+    @staticmethod
+    def create(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            serialized_data: dict = None
+    ):
+        """
+        Create Kairnial BIM Quick Filter
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param serialized_data : Validated data from BIMFilterRequestSerializer
+        """
+        kbf = KairnialBIMFilterService(client_id=client_id, token=token, project_id=project_id,
+                                       user_id=user_id)
+        return kbf.create(serialized_data=serialized_data)
+
+
+class BIMDefectModel(PaginatedModel):
+    """
+    Kairnial Defect Model
+    """
+
+    @staticmethod
+    def list(
+            client_id: str,
+            token: str,
+            project_id: str,
+            model_id: str,
+            filters: dict = None,
+            user_id: str = None
+    ):
+        """
+        List of defects
+        """
+        kbdm = KairnialBIMDefectModelService(client_id=client_id, token=token, project_id=project_id,
+                                             user_id=user_id)
+        pins = kbdm.list(model_id=model_id, filters=filters).get('items')
+        return pins
+
+
+class BIMExport(PaginatedModel):
+    """
+    Kairnial BIM Export
+    """
+
+    @staticmethod
+    def add_to_queue(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str,
+            data: dict
+    ):
+        """
+        add export items to queue using BCF
+        """
+        kbm = KairnialBIMExportService(client_id=client_id, token=token, project_id=project_id, user_id=user_id)
+        return kbm.add_to_queue(data)
+
+
+class BIMParameterTemplate(PaginatedModel):
+    """
+    Kairnial BIM Paramter Template
+    """
+
+    @staticmethod
+    def list(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None
+    ):
+        """
+        List BIM Paramter Template
+        """
+        kbp = KairnialBIMParameterTemplateService(client_id=client_id, token=token, project_id=project_id,
+                                                  user_id=user_id)
+        return kbp.list()
+
+    @staticmethod
+    def create(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str,
+            serialized_data: dict
+    ):
+        """
+        Create Kairnial BIM Parameter Definition
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param serialized_data: Validated data from BIMParameterTemplatesRequestSerializer
+        :return:
+        """
+        kbp = KairnialBIMParameterTemplateService(client_id=client_id, token=token, project_id=project_id,
+                                                  user_id=user_id)
+        return kbp.create(serialized_data=serialized_data)
+
+    @staticmethod
+    def update(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str,
+            serialized_data: dict,
+            parameter_uuid: str
+    ):
+        """
+                Update Kairnial BIM Parameter Definition
+                :param client_id: ID of the client
+                :param token: Access token
+                :param project_id: RGOC Code of the project
+                :param user_id: ID of the user
+                :param serialized_data: Validated data from BIMParameterTemplatesRequestSerializer
+                :param parameter_uuid : Unique Parameter ID
+                :return:
+                """
+        kbp = KairnialBIMParameterTemplateService(client_id=client_id, token=token, project_id=project_id,
+                                                  user_id=user_id)
+        return kbp.update(serialized_data=serialized_data, parameter_uuid=parameter_uuid)
+
+
+class BIMReview(PaginatedModel):
+    """
+    Kairnial BIM Review
+    """
+
+    @staticmethod
+    def add_review(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str,
+            data: dict
+    ):
+        """
+        add review to model object
+        """
+        kbrs = KairnialBIMReviewService(client_id=client_id, token=token, project_id=project_id, user_id=user_id)
+        return kbrs.add_review(data)
+
+    @staticmethod
+    def update_review(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str,
+            data: dict,
+            review_id: str
+    ):
+        """
+        update review to model object
+        """
+        kbrs = KairnialBIMReviewService(client_id=client_id, token=token, project_id=project_id, user_id=user_id)
+        return kbrs.update_review(review_id=review_id, data=data)
+
+    @staticmethod
+    def review_comment(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str,
+            data: dict,
+            review_id: str
+    ):
+        """
+        update review to model object
+        """
+        kbrs = KairnialBIMReviewService(client_id=client_id, token=token, project_id=project_id, user_id=user_id)
+        return kbrs.review_comment(review_id=review_id, data=data)
+
+    @staticmethod
+    def save_png_image(
+            client_id: str,
+            token: str,
+            project_id: str,
+            data: dict,
+            user_id: str = None
+    ):
+        """
+        Save PNG image
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param data: BIMSavePNGQuerySerializer validated data
+        :param user_id: ID of the user
+        :return:
+        """
+        kbrs = KairnialBIMReviewService(client_id=client_id, token=token, user_id=user_id,
+                                        project_id=project_id)
+        response = kbrs.save_png_image(data=data)
+        return response
+
+
+class BIMSnapshot(PaginatedModel):
+    """
+    Kairnial BIM Snapshot
+    """
+
+    @staticmethod
+    def delete(
+            client_id: str,
+            token: str,
+            project_id: str,
+            snapshot_id: str = None,
+            user_id: str = None
+    ):
+        """
+        Archive a Bim Snapshot
+        """
+        kbs = KairnialBIMSnapshotService(
+            client_id=client_id,
+            token=token,
+            user_id=user_id,
+            project_id=project_id
+        )
+        return kbs.delete(snapshot_id=snapshot_id)
+
+
+class BIMSystemLevel(PaginatedModel):
+    """
+    Kairnial BIM System Level Model
+    """
+
+    @staticmethod
+    def get_all_system_level(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            model_id: str = None
+    ):
+        """
+        Get ALL BIM System Level on a project
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id : Unique Model UUID
+        :return:
+        """
+        kbs = KairnialBIMSystemLevelService(client_id=client_id, token=token, project_id=project_id,
+                                            user_id=user_id)
+        return kbs.get_all_system_level()
+
+    @staticmethod
+    def list(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            model_id: str = None
+    ):
+        """
+        List BIM System Level on a project
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id : Unique Model UUID
+        :return:
+        """
+        kbs = KairnialBIMSystemLevelService(client_id=client_id, token=token, project_id=project_id,
+                                            user_id=user_id)
+        system_level_list = kbs.list(model_id=model_id)
+        if system_level_list:
+            return system_level_list.get("items")
+        return []
+
+    @staticmethod
+    def create(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            model_id: str = None,
+            serialized_data: dict = None
+    ):
+        """
+        Create BIM System Level on a project
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id : Unique Model UUID
+        :param serialized_data: Validated Data from BIMSystemLevelRequestSerializer
+        :return:
+        """
+        kbs = KairnialBIMSystemLevelService(client_id=client_id, token=token, project_id=project_id,
+                                            user_id=user_id)
+        return kbs.create(model_id=model_id, serialized_data=serialized_data)
+
+    @staticmethod
+    def update(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            model_id: str = None,
+            serialized_data: dict = None,
+            system_level_uuid: str = None
+    ):
+        """
+        Update BIM System Level on a project
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id : Unique Model UUID
+        :param serialized_data: Validated Data from BIMSystemLevelRequestSerializer
+        :param system_level_uuid: Unique System Level UUID
+        """
+        kbs = KairnialBIMSystemLevelService(client_id=client_id, token=token, project_id=project_id,
+                                            user_id=user_id)
+        return kbs.update(model_id=model_id, serialized_data=serialized_data, system_level_uuid=system_level_uuid)
+
+    @staticmethod
+    def archive(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            model_id: str = None,
+            system_level_uuid: str = None
+    ):
+        """
+        Archive BIM System Level on a project
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id: Numeric model ID
+        :param system_level_uuid: Unique System Level UUID
+        :return:
+        """
+        kbs = KairnialBIMSystemLevelService(client_id=client_id, token=token, project_id=project_id,
+                                            user_id=user_id)
+        return kbs.archive(model_id=model_id, system_level_uuid=system_level_uuid)
+
+    @staticmethod
+    def recover(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            model_id: str = None,
+            system_level_uuid: str = None
+    ):
+        """
+        Recover BIM System Level on a project
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id: Numeric model ID
+        :param system_level_uuid: Unique System Level UUID
+        :return:
+        """
+        kbs = KairnialBIMSystemLevelService(client_id=client_id, token=token, project_id=project_id,
+                                            user_id=user_id)
+        return kbs.recover(model_id=model_id, system_level_uuid=system_level_uuid)
+
+
+class BIMModelFilter(PaginatedModel):
+    """
+    Kairnial BIM Model Filter
+    """
+
+    @staticmethod
+    def create(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str,
+            serialized_data: dict,
+            model_id: int
+    ):
+        """
+        add BIM model filter
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id : Unique Model UUID
+        :param serialized_data: BIMModelFilterRequestSerializer validated data
+        :return:
+        """
+        kbmfs = KairnialBIMModelFilterService(client_id=client_id, token=token, project_id=project_id, user_id=user_id)
+        return kbmfs.create(serialized_data=serialized_data, model_id=model_id)
+
+    @staticmethod
+    def list(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str,
+            model_id: int
+    ):
+        """
+        List BIM Model Filters
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id : Unique Model UUID
+        """
+        kbmfs = KairnialBIMModelFilterService(
+            client_id=client_id,
+            token=token,
+            project_id=project_id,
+            user_id=user_id)
+        return kbmfs.list(model_id=model_id)
+
+    @staticmethod
+    def delete(
+            client_id: str,
+            token: str,
+            project_id: str,
+            model_id: int,
+            filter_id: str,
+            user_id: str = None
+    ):
+        """
+        Archive a Bim Model Filter
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id : Unique Model UUID
+        :param filter_id: Unique Filter ID
+        :return:
+        """
+        kbmfs = KairnialBIMModelFilterService(
+            client_id=client_id,
+            token=token,
+            project_id=project_id,
+            user_id=user_id)
+        return kbmfs.delete(model_id=model_id, filter_id=filter_id)
+
+    @staticmethod
+    def is_model_exist(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str,
+            model_id: int):
+        """
+        Find the model by model_id
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id: Numeric model ID
+        """
+        kbmfs = KairnialBIMModelFilterService(
+            client_id=client_id,
+            token=token,
+            project_id=project_id,
+            user_id=user_id)
+        return kbmfs.is_model_exist(model_id=model_id)
+
+
+class BIMSettings(PaginatedModel):
+    """
+    Kairnial BIM Settings
+    """
+
+    @staticmethod
+    def create(
+            client_id: str,
+            token: str,
+            project_id: str,
+            model_id: int,
+            serialized_data: dict,
+            user_id: str = None
+    ):
+        """
+        Add BIM Settings
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id: Numeric Model ID
+        :param serialized_data: BIMSettingsRequestSerializer validated data
+        :return:
+        """
+        kbss = KairnialBIMSettingsService(client_id=client_id, token=token, project_id=project_id,
+                                          user_id=user_id)
+        return kbss.create(model_id=model_id, serialized_data=serialized_data)
+
+    @staticmethod
+    def list(
+            client_id: str,
+            token: str,
+            project_id: str,
+            model_id: int,
+            serialized_data: dict,
+            user_id: str = None
+    ):
+        """
+        List BIM Settings
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param model_id: Numeric Model ID
+        :param serialized_data: BIMSettingsQuerySerializer validated data
+        :return:
+        """
+        kbss = KairnialBIMSettingsService(client_id=client_id, token=token, project_id=project_id,
+                                          user_id=user_id)
+        return kbss.list(model_id=model_id, serialized_data=serialized_data)
+
+
+class BIMFieldDrawing(PaginatedModel):
+    """
+    Kairnial BIM Field Drawing Model
+    """
+
+    @staticmethod
+    def list(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None
+    ):
+        """
+        List BIM Field Drawings
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :return:
+        """
+        kbfds = KairnialBIMFieldDrawingService(client_id=client_id, token=token, project_id=project_id,
+                                               user_id=user_id)
+        return kbfds.list()
+
+    @staticmethod
+    def get_advanced_field_drawings(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None
+    ):
+        """
+        List BIM Advanced Field Drawings
+        """
+        kbfds = KairnialBIMFieldDrawingService(client_id=client_id, token=token, project_id=project_id,
+                                               user_id=user_id)
+        return kbfds.get_advanced_field_drawings()

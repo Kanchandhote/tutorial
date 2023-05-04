@@ -1,0 +1,87 @@
+    
+bim/models/{model_id}/filters (POST)
+#########################################viewset.py###########
+class BIMModelFilterViewSet(PaginatedViewSet):
+    """
+    A ViewSet for BIM Model Filters
+    """
+@extend_schema(
+        summary=_("Add Kairnial Bim Model Filter"),
+        description=_("Add Kairnial Bim Model Filter on this project"),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID of model ID"))
+        ],
+        request=BIMModelFilterRequestSerializer,
+        responses={201: OpenApiTypes.STR, 404: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/models', ],
+        methods=["POST"]
+    )
+    @handle_ws_error
+    def create(self, request: TokenRequest, client_id: str, project_id: str, model_id: str):
+        """
+        add bim model filter
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id: Numeric model ID
+        :return:
+        """
+        model = BIMModel.get(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            model_uuid=model_id
+        )
+        if not model:
+            return Response(data=_('Model Not Found'), status=status.HTTP_404_NOT_FOUND)
+
+        # is_model_exist = BIMModelFilter.is_model_exist(
+        #     client_id=client_id,
+        #     token=request.token,
+        #     project_id=project_id,
+        #     user_id=request.user_id,
+        #     model_id=model_id
+        # )
+        # if not is_model_exist:
+        #     return Response({'model_id': f"Model with ID {model_id} not found"},
+        #                     content_type=JSON_CONTENT_TYPE,
+        #                     status=status.HTTP_400_BAD_REQUEST)
+
+        bmfrs = BIMModelFilterRequestSerializer(data=request.data)
+        if not bmfrs.is_valid():
+            return Response(bmfrs.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        BIMModelFilter.create(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            serialized_data=bmfrs.validated_data,
+            model_id=model.get('model_uuid')
+        )
+        return Response(_('Model filter created successfully.'), status=status.HTTP_201_CREATED)
+
+
+
+#############################Test.py ###############################BimTest
+def _create_bim_model_filter(self, filter_name: str = None):
+        """
+        Create BIM Model Filter
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+            use_reverse=True
+        )
+        resp = kc.post('bim_model_filters-list', reverse_kwargs={'model_id': "2ccf3e4a-398e-423e-b30b-f3954830166e"},
+                       data=json.dumps({
+                           'name': filter_name if filter_name else 'test filter',
+                           'content': 'test filter content'
+                       }))
+        self.assertEqual(resp.status_code, 201)
+        return resp

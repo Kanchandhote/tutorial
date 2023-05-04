@@ -1,0 +1,37 @@
+List BIM Layer Revision
+
+BIMReviewSystemFileSerializer
+
+400: OpenApiTypes.OBJECT, 404: OpenApiTypes.STR,
+
+
+ header_name = serializers.CharField(
+        label=_("header_name"),
+        help_text=_("Entete Name"),
+        source='entete_nom',
+        read_only=True
+    )
+    header_ext = serializers.CharField(
+        label=_('header_ext'),
+        help_text=_('Entete ext'),
+        source='entete_ext',
+        read_only=True
+    )
+    file_path = serializers.CharField(
+        label=_("path"),
+        help_text=_("File Full Path"),
+        source='files_path',
+        read_only=True,
+    )
+    key = serializers.CharField(
+        label=_('key'),
+        help_text=_('key'),
+        source='cle',
+        read_only=True
+    )
+    file_size = serializers.CharField(
+        label=_("file size"),
+        help_text=_("Size of Files"),
+        source='files_size',
+        read_only=True
+    )

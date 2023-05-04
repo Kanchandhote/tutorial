@@ -1,0 +1,873 @@
+import json
+from pathlib import Path
+
+from kl_common import JSON_CONTENT_TYPE
+from kl_common.tests import CommonTest, KairnialClient
+
+from dynamics_apis.defects.serializers import BIMDefectSerializer
+from .serializers import BIMParameterTemplateSerializer, BIMRichElementSerializer, BIMLayerByModelSerializer, \
+    BIMFilterSerializer, BIMMetaElementSerializer, BIMLayerInfosFromRModel, BIMSystemLevelAllSerializer, \
+    BIMLayerLastRevisionSerializer, BIMParameterValueSerializer, BIMReviewCreateSerializer, BIMReviewUpdateSerializer, \
+    BIMSavePNGCreateSerializer, BIMSystemLevelInfoSerializer, BIMSystemLevelSerializer, BIMModelSerializer, \
+    BIMLayerSerializer, BIMModelStatisticsSerializer, BIMLayerRecoverSerializer
+
+
+class BimTest(CommonTest):
+    """
+    Test Bim routes
+    """
+
+    def _list_bim_models(self):
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        return kc.get('bim/models/?page_limit=100&page_offset=0')
+
+    def _delete_bim_models(self, model_uuid: str = None):
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        return kc.delete(f'bim/models/{model_uuid}/')
+
+    def _create_system_level(self):
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.post('bim/models/c30e98b9-5c5f-4d5e-b624-91e5c44fd43a/system_levels/',
+                       data={
+                           "name": "System Level from API",
+                           "unit": "m",
+                           "group": "GLOBAL",
+                           "label": "System Level from API",
+                           "height": 1.25,
+                           "elevation": 1.25,
+                           "last_elevation": 0.0,
+                           "last_elevation_down": 0.0
+                       })
+        self.assertEqual(resp.status_code, 201)
+        return resp
+
+    def _create_parameter_template(self):
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.post(
+            'bim/parameter_templates/',
+            data=json.dumps({
+                "group_label": "General",
+                "value": [],
+                "name": "new param from Python API",
+                "type": "T"
+            }), content_type=JSON_CONTENT_TYPE)
+        return resp
+
+    def test_list_bim_rich_elements(self):
+        """
+        Test List BIM Rich Elements Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/rich_elements/?page_limit=100&page_offset=0')
+        items = resp.json().get("items", [])
+        serializer = BIMRichElementSerializer(data=items, many=True)
+        self.assertTrue(serializer.is_valid())
+
+    def test_list_bim_filters(self):
+        """
+        Test List BIM Filters Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.get('bim/filters/?page_limit=100&page_offset=0')
+        items = resp.json().get("items", [])
+        serializer = BIMFilterSerializer(data=items, many=True)
+        self.assertTrue(serializer.is_valid())
+
+    def test_layer_meta_elements(self):
+        """
+        Test Get BIM Layer Meta Elements Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/layers/fdcca4f0-e3b9-49e5-b3a1-aa742ec6685c/meta_elements/')
+        serializer = BIMMetaElementSerializer(data=resp.json())
+        self.assertTrue(serializer.is_valid())
+
+    def test_get_layer_by_model(self):
+        """
+        Test BIM layers By Model Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/models/22/layers/')
+        serializer = BIMLayerByModelSerializer(data=resp.json(), many=True)
+        self.assertTrue(serializer.is_valid())
+
+    def test_delete_bim_layer_406(self):
+        """
+        Test Delete Bim Layer Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.delete('bim/layers/123/')
+        self.assertEqual(resp.status_code, 406)
+
+    def test_delete_bim_elements_406(self):
+        """
+        Test Delete Bim Elements Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.delete('bim/layers/be2ddaf2-06ff-48a9-a2be-a788b65e47b6/delete_elements/')
+        self.assertEqual(resp.status_code, 406)
+
+    def test_delete_bim_model_406(self):
+        """
+        Test Delete Bim Model Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.delete('bim/models/a0875bc9-dc30-455d-8d5a-0a287f9165a7/')
+        self.assertEqual(resp.status_code, 406)
+
+    def test_delete_bim_snapshot_406(self):
+        """
+        Test Delete Bim Snapshot Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.delete('bim/snapshots/be2ddaf2-06ff-48a9-a2be-a788b65e47b6/')
+        self.assertEqual(resp.status_code, 406)
+
+    def test_add_review(self):
+        """
+        Test add review to model object
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        path = Path(__file__).parent / "./mock_json/add_review_request.json"
+        with path.open('r') as f:
+            data = json.load(f)
+        ser = BIMReviewCreateSerializer(data=data)
+        self.assertTrue(ser.is_valid())
+        resp = kc.post('bim/reviews/', data=data, content_type=JSON_CONTENT_TYPE)
+        self.assertEqual(resp.status_code, 201)
+
+    def test_get_defects(self):
+        """
+        Test Get list of bim defects
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.get('bim/models/0/defects/?by_plan_group=true&mode=stats&page_limit=100&page_offset=0')
+        serializer = BIMDefectSerializer(data=resp.json())
+        self.assertTrue(serializer.is_valid())
+
+    def _create_bim_model_filter(self, filter_name: str = None):
+        """
+        Create BIM Model Filter
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.post('bim/models/22/filters/',
+                       data={
+                           'name': filter_name if filter_name else 'test filter',
+                           'content': 'test filter content'
+                       })
+        self.assertEqual(resp.status_code, 201)
+        return resp
+
+    def _list_model_filters(self):
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/models/22/filters/')
+        return resp
+
+    def test_add_model_filter(self):
+        """
+        Test Add BIM Model Filter
+        """
+        resp = self._create_bim_model_filter()
+        self.assertEqual(resp.status_code, 201)
+
+    def test_add_model_filter_400(self):
+        """
+        Test Add BIM Model Filter
+        Check for invalid model id
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.post('bim/models/1/filters/',
+                       data={
+                           'name': 'test filter',
+                           'content': 'test filter content'
+                       })
+        self.assertEqual(resp.status_code, 400)
+
+    def test_list_model_filters(self):
+        """
+        Test Get BIM Model Filters
+        """
+        resp = self._list_model_filters()
+        self.assertEqual(resp.status_code, 200)
+
+    def test_delete_model_filters(self):
+        """
+        Test Delete BIM Model Filters
+        """
+        # create Filter
+        self._create_bim_model_filter(filter_name='Filter To Be Deleted')
+        filter_list = self._list_model_filters()
+        filtered_filter_list = [f for f in filter_list.data if f.get('name') == 'Filter To Be Deleted']
+        if filtered_filter_list:
+            kc = KairnialClient(
+                access_token=self.access_token,
+                client_id=self.client_id,
+                project_id=self.project_id)
+            resp = kc.delete('bim/models/22/filters/' + filtered_filter_list[0]['filter_id'] + '/')
+            self.assertEqual(resp.status_code, 204)
+
+    def test_create_parameter_template(self):
+        """
+        Test Create Kairnial BIM Parameter Template
+        """
+        resp = self._create_parameter_template()
+        self.assertEqual(resp.status_code, 201)
+
+    def test_model_meta_elements(self):
+        """
+        Test Get BIM Model Meta Elements Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/models/c30e98b9-5c5f-4d5e-b624-91e5c44fd43a/meta_elements/')
+        serializer = BIMMetaElementSerializer(data=resp.json())
+        self.assertTrue(serializer.is_valid())
+
+    def test_update_review_single_field(self):
+        """
+        Test update review to model object for single field
+        """
+        path = Path(__file__).parent / "./mock_json/update_review_single_field_request.json"
+        with path.open('r') as f:
+            data = json.load(f)
+        ser = BIMReviewUpdateSerializer(data=data)
+        self.assertTrue(ser.is_valid())
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.put('bim/reviews/d90e87cc-4037-4394-b334-66ffb23f9fa2', data=data, content_type=JSON_CONTENT_TYPE)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_save_png_image(self):
+        """
+        Test save png image
+        """
+        path = Path(__file__).parent / "./mock_json/save_png_request.json"
+        with path.open('r') as f:
+            data = json.load(f)
+        ser = BIMSavePNGCreateSerializer(data=data)
+        self.assertTrue(ser.is_valid())
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.post('bim/reviews/save_png_image/', data=ser.validated_data, content_type=JSON_CONTENT_TYPE)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_update_review_multiple_field(self):
+        """
+        Test update review to model object for multiple field
+        """
+        path = Path(__file__).parent / "./mock_json/update_review_multiple_field_request.json"
+        with path.open('r') as f:
+            data = json.load(f)
+        ser = BIMReviewUpdateSerializer(data=data)
+        self.assertTrue(ser.is_valid())
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.put('bim/reviews/d90e87cc-4037-4394-b334-66ffb23f9fa2', data=data, content_type=JSON_CONTENT_TYPE)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_review_comment(self):
+        """
+        Test add a review comment to a review
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.post(
+            'bim/review/d90e87cc-4037-4394-b334-66ffb23f9fa2/review_comment/',
+            data=json.dumps({
+                "comment": "sample comment"
+
+            }), content_type=JSON_CONTENT_TYPE)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_get_layer_info_from_rmodel(self):
+        """
+        Test Get BIM Layer Info from RModel Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/layers/22/info_from_rmodel/?model_file_ids'
+                      '=2qo41za72s_23b29a5963e0d85418e452d34e872fe7fa2e361e42b1ddfd12a32919b4093c3d')
+        serializer = BIMLayerInfosFromRModel(data=resp.json(), many=True)
+        self.assertTrue(serializer.is_valid())
+
+    def test_get_all_system_level(self):
+        """
+        Test List BIM System Level Info Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/models/c30e98b9-5c5f-4d5e-b624-91e5c44fd43a/system_levels/all/')
+        serializer = BIMSystemLevelAllSerializer(data=resp.json())
+        self.assertTrue(serializer.is_valid())
+
+    def test_get_layer_last_revision(self):
+        """
+        Test Get BIM Layer Last Revision Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/layers/792ce0cc-572e-46c6-aed7-2d490b8ff5f1/last_revision/')
+        serializer = BIMLayerLastRevisionSerializer(data=resp.json())
+        self.assertTrue(serializer.is_valid())
+
+    def test_get_element_parameter_values(self):
+        """
+        Test Get BIM Layer Element Parameter Values on a project
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/elements/d595770b-f514-4b73-8f6b-79ee78e8a89e/parameter_values/')
+        serializer = BIMParameterValueSerializer(data=resp.json(), many=True)
+        self.assertTrue(serializer.is_valid())
+
+    def test_archive_bim_filter(self):
+        """
+        Test Archive Bim Filters Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.delete('bim/filters/66d57701-69c2-4790-adf3-d10f59f9f116/')
+        self.assertEqual(resp.status_code, 204)
+
+    def test_create_system_level(self):
+        """Test Create a System Level"""
+        resp = self._create_system_level()
+        serializer = BIMSystemLevelSerializer(data=resp.json())
+        self.assertTrue(serializer.is_valid())
+
+    def test_list_system_level(self):
+        """
+        Test List BIM System Level Info Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/models/c30e98b9-5c5f-4d5e-b624-91e5c44fd43a/system_levels/?page_limit=100&page_offset=0')
+        serializer = BIMSystemLevelInfoSerializer(data=resp.json().get("items"), many=True)
+        self.assertTrue(serializer.is_valid())
+
+    def test_update_system_level(self):
+        """Test Update a System Level"""
+        created_resp = self._create_system_level()
+        model_uuid = created_resp.json().get("model_uuid", "c30e98b9-5c5f-4d5e-b624-91e5c44fd43a")
+        system_level_uuid = created_resp.json().get("uuid", "26518982-f892-4115-8fd6-4c38353dd337")
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.put(
+            f'bim/models/{model_uuid}/system_levels/{system_level_uuid}/',
+            data={
+                "name": "Updated System Level from API",
+                "unit": "m",
+                "group": "GLOBAL",
+                "label": "Updated System Level from API",
+                "height": 3.9370,
+                "elevation": 353.0183,
+                "last_elevation": 0.0,
+                "last_elevation_down": 0.0
+            })
+        serializer = BIMSystemLevelSerializer(data=resp.json())
+        self.assertTrue(serializer.is_valid())
+
+    def test_add_model_filter_400(self):
+        """
+        Test Add BIM Model Filter
+        Check for invalid model id
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.post('bim/models/1/filters/',
+                       data={
+                           'name': 'test filter',
+                           'content': 'test filter content'
+                       })
+        self.assertEqual(resp.status_code, 400)
+
+    def test_list_model_filters(self):
+        """
+        Test Get BIM Model Filters
+        """
+        resp = self._list_model_filters()
+        self.assertEqual(resp.status_code, 200)
+
+    def test_delete_model_filters(self):
+        """
+        Test Delete BIM Model Filters
+        """
+        # create Filter
+        self._create_bim_model_filter(filter_name='Filter To Be Deleted')
+        filter_list = self._list_model_filters()
+        filtered_filter_list = [f for f in filter_list.data if f.get('name') == 'Filter To Be Deleted']
+        if filtered_filter_list:
+            kc = KairnialClient(
+                access_token=self.access_token,
+                client_id=self.client_id,
+                project_id=self.project_id)
+            resp = kc.delete('bim/models/22/filters/' + filtered_filter_list[0]['filter_id'] + '/')
+            self.assertEqual(resp.status_code, 204)
+
+    def test_archive_system_level(self):
+        """Test Archive System Level"""
+        created_resp = self._create_system_level()
+        model_uuid = created_resp.json().get("model_uuid", "c30e98b9-5c5f-4d5e-b624-91e5c44fd43a")
+        system_level_uuid = created_resp.json().get("uuid", "26518982-f892-4115-8fd6-4c38353dd337")
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.delete(f'bim/models/{model_uuid}/system_levels/{system_level_uuid}/')
+        self.assertEqual(resp.status_code, 204)
+
+    def test_list_parameter_template(self):
+        """
+        Test List Kairnial BIM Parameter Template
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.get('bim/parameter_templates/?page_limit=100&page_offset=0')
+        items = resp.json().get("items")
+        serializer = BIMParameterTemplateSerializer(data=items, many=True)
+        self.assertTrue(serializer.is_valid())
+
+    def test_archive_bim_file_filter_406(self):
+        """
+        Test Archive Bim File Filters Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.delete('bim/filters/0608e181-783f-400e-99d1-abd0ab548915/file_filter/')
+        self.assertEqual(resp.status_code, 406)
+
+    def test_update_parameter_template(self):
+        """
+        Test Update Kairnial BIM Parameter Template
+        """
+        resp = self._create_parameter_template()
+        parameter_uuid = resp.json()
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.put(f'bim/parameter_templates/{parameter_uuid}/',
+                      data=json.dumps({
+                          "group_label": "General",
+                          "value": [],
+                          "name": "updated param from Python API",
+                          "type": "T"
+                      }), content_type=JSON_CONTENT_TYPE)
+
+        self.assertEqual(resp.status_code, 200)
+
+    def test_archive_bim_filter(self):
+        """
+        Test Archive Bim Filters Endpoint
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.delete('bim/filters/66d57701-69c2-4790-adf3-d10f59f9f116/')
+        self.assertEqual(resp.status_code, 204)
+
+    def test_get_model_statistics_not_found(self):
+        """
+        Test Get Kairnial BIM Model Statistics Not Found
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/layers/394af60d-6483-4b63-b030-af26a08ae921/model_stats/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_add_bim_settings(self):
+        """
+        Test Add BIM Settings
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id
+        )
+        resp = kc.post('bim/models/22/settings/', data={'setting_type': 1, 'setting_key': 'test_setting_key',
+                                                        'setting_value': 'test_setting_value'})
+        self.assertEqual(resp.status_code, 200)
+
+    def test_archive_bim_file_filter_406(self):
+        """
+        Test Archive Bim File Filters Endpoint 406
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.delete('bim/filters/0608e181-783f-400e-99d1-abd0ab548915/file_filter/')
+        self.assertEqual(resp.status_code, 406)
+
+    def test_get_model_statistics_found(self):
+        """
+        Test Get Kairnial BIM Model Statistics Found
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/layers/75755b4e-9531-4e61-bba3-b0fc988bdd8b/model_stats/')
+        self.assertEqual(resp.status_code, 200)
+        serializer = BIMModelStatisticsSerializer(data=resp.json())
+        self.assertTrue(serializer.is_valid())
+
+    def test_list_bim_settings(self):
+        """
+        Test Get List of BIM Settings
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id
+        )
+        resp = kc.get('bim/models/22/settings/?setting_key=test_setting_key&setting_type=1')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_list_bim_settings_400(self):
+        """
+        Test Get List of BIM Settings with no settings found
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/models/22/settings/?setting_key=test&setting_type=1')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_list_bim_models(self):
+        """
+        Test List BIM Models
+        """
+        resp = self._list_bim_models()
+        serializer = BIMModelSerializer(data=resp.json().get("items"), many=True)
+        self.assertTrue(serializer.is_valid())
+
+    def test_delete_bim_models(self):
+        """
+        Test Delete BIM Models
+        """
+        model_uuid = "442027e3-3f24-4e90-8649-fe931d010c8e"
+        model_list = self._list_bim_models()
+        items = model_list.json().get("items")
+        if items:
+            model_uuid = items[0].get("uuid")
+        resp = self._delete_bim_models(model_uuid=model_uuid)
+        self.assertEqual(resp.status_code, 204)
+
+    def test_recover_bim_models(self):
+        """
+        Test Recover BIM Models
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        model_uuid = "442027e3-3f24-4e90-8649-fe931d010c8e"
+        model_list = self._list_bim_models()
+        items = model_list.json().get("items")
+        if items:
+            model_uuid = items[0].get("uuid")
+        self._delete_bim_models(model_uuid=model_uuid)
+        resp = kc.patch(f"bim/models/{model_uuid}/")
+        self.assertTrue(resp.status_code, 200)
+
+    def test_recover_custom_bim_filter_400(self):
+        """
+        Test Recover Kairnial Custom BIM Filter
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.patch('bim/filters/3e01d1ae-9b88-4d37-8a8d-73d8bf84dcd5/recover/')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_archve_bim_status(self):
+        """
+        Test Archive BIM Status
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.delete(
+            'bim/elements/3fa85f64-5717-4562-b3fc-2c963f66afa6/status/3fa85f64-5717-4562-b3fc-2c963f66afa6/')
+        self.assertEqual(resp.status_code, 204)
+
+    def _test_get_layers(self):
+        """
+        Get list of layers
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/layers/?page_limit=100&page_offset=0')
+        return resp.json().get('items')
+
+    def test_list_all_bim_status(self):
+        """
+        Test List All BIM Status
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+
+            project_id=self.project_id,
+        )
+        resp = kc.get(
+            'bim/elements/3fa85f64-5717-4562-b3fc-2c963f66afa6/status/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_get_layers(self):
+        """
+        Test update layer
+        """
+        response = self._test_get_layers()
+        serializer = BIMLayerSerializer(data=response, many=True)
+        self.assertTrue(serializer.is_valid())
+
+    def test_update_layer(self):
+        """
+        Test update layer
+        """
+        layers = self._test_get_layers()
+        if layers:
+            layer_id = layers[0].get('id')
+            layer_name = layers[0].get('name')
+            model_id = layers[0].get('model_id')
+            kc = KairnialClient(
+                access_token=self.access_token,
+                client_id=self.client_id,
+                project_id=self.project_id)
+            resp = kc.put(f'bim/models/{model_id}/layers/{layer_id}/', data={
+                'is_file_id': False,
+                'name': layer_name
+            })
+            self.assertEqual(resp.status_code, 200)
+
+    def _test_delete_layer(self):
+        """
+        Test Delete layer
+        :param layer_id: Numeric Layer ID
+        """
+        layers = self._test_get_layers()
+        if layers:
+            layer_id = layers[0].get('id')
+            model_id = layers[0].get('model_id')
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.delete(f'bim/models/{model_id}/delete_layers/{layer_id}/')
+        return resp
+
+    def test_delete_layer(self):
+        """
+        Test Delete layer
+        """
+        resp = self._test_delete_layer()
+        self.assertEqual(resp.status_code, 204)
+
+    def test_recover_layer_400(self):
+        """
+        Test recover layer with error
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.patch(f'bim/models/0/layers/1/')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_get_field_drawings(self):
+        """
+        Test Get BIM Field Drawings on a project
+         """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/field_drawings/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_get_advance_field_drawings(self):
+        """
+        Test Get BIM Advance Field Drawings on a project
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/field_drawings/advance/')
+        self.assertEqual(resp.status_code, 200)
+
+    def test_get_layer_revision(self):
+        """
+        Test List Kairnial BIM Layer Revision on a project
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id
+        )
+        resp = kc.get('bim/models/4/layers/be2ddaf2-06ff-48a9-a2be-a788b65e47b6/revisions/')
+        serializer = BIMLayerSerializer(data=resp.json(), many=True)
+        self.assertTrue(serializer.is_valid())
+
+    def test_update_layer_revision(self):
+        """
+        Test Update Kairnial BIM Layer Revision on a project
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.patch('bim/models/4/layers/1/update_revisions/', data={
+            'name': 'test',
+            'id': '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+            'revision': 0
+        })
+        self.assertEqual(resp.status_code, 200)
+
+    def list_layer_to_recover(self):
+        """
+        Test List Kairnial BIM Layer To Recover
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/models/4/layers/recover/')
+        self.assertEqual(resp.status_code, 200)
+        serializer = BIMLayerRecoverSerializer(data=resp.json(), many=True)
+        self.assertTrue(serializer.is_valid())
+
+    def test_create_bim_quick_filter(self):
+        """
+        Create BIM Quick Filter
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.post('bim/filters/',
+                       data={
+                           "type": "string",
+                           "label": "Type",
+                           "data_field": "Type",
+                           "field_type": ""
+                       })
+        self.assertEqual(resp.status_code, 201)
+        serializer = BIMFilterSerializer(data=resp.json(), many=True)
+        self.assertTrue(serializer.is_valid())
+
+    def test_get_bim_element_by_layer_400(self):
+        """
+        Test List of BIM Element for a Layer with error
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id)
+        resp = kc.get('bim/models/22/layers/11/elements/3fa85f64-5717-4562-b3fc-2c963f66afa6/')
+        self.assertEqual(resp.status_code, 400)

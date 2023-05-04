@@ -1,0 +1,89 @@
+       @extend_schema(
+        summary=_("List campaign information for defect"),
+        description=_("List campaign information for defect on a Project"),
+        parameters=project_parameters,
+        responses={200: DefectCampaignSerializer(many=True), 400: OpenApiTypes.OBJECT,
+                   503: ServiceErrorSerializer},
+        tags=['defects', ],
+        methods=["GET"]
+    )
+    @action(methods=["GET"], detail=False, url_path="check/rfield_campaign", url_name='check_rfield_campaign')
+    @handle_ws_error
+    def list_rfield_campaign(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        List campaign information for defect
+        :param request:
+        :param request: Access token
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        campaign = Defect.list_campaigns(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id
+        )
+        drcs = DefectCampaignSerializer(campaign, many=True)
+        return Response(data=drcs.data, status=status.HTTP_200_OK)
+
+#################################################################################
+@staticmethod
+    def list_campaigns(client_id: str,
+                             token: str,
+                             project_id: str,
+                             user_id: str = None):
+        """
+        List campaign information for defect
+
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :return: DefectRfieldCampaignSerializer data
+        """
+        ds = KairnialDefectService(client_id=client_id,
+                                   token=token, user_id=user_id,
+                                   project_id=project_id)
+
+        return ds.list_campaigns()
+
+
+###########################################################################################
+
+  def list_campaigns(self):
+        """
+        List campaign information for defect
+        """
+        return self.call(
+            action='checkRightRfieldCampaign',
+            parameters=[]
+        )
+
+
+#############################################################
+class DefectCampaignSerializer(serializers.Serializer):
+    source = serializers.IntegerField(
+        label=_('source'),
+        help_text=_('Numeric Source Value'),
+        read_only=True
+    )
+    id = serializers.UUIDField(
+        label=_('id'),
+        help_text=_('Unique Source ID'),
+        source='guid',
+        read_only=True
+    )
+########################################################################
+   def test_list_campaigns(self):
+        """
+        Test List campaign information for defect
+        """
+        kc = KairnialClient(
+            access_token=self.access_token,
+            client_id=self.client_id,
+            project_id=self.project_id,
+        )
+        resp = kc.get(
+            "defects/check/rfield_campaign/")
+        self.assertEqual(resp.status_code, 200)

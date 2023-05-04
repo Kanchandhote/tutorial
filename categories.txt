@@ -1,0 +1,60 @@
+@extend_schema(
+        summary=_("List defect Template categories"),
+        description=_("List Template categories attached to defects"),
+        parameters=project_parameters,
+        # it only returns list of string in response.
+        responses={200: serializers.ListSerializer(child=serializers.CharField()), 400: OpenApiTypes.OBJECT,
+                   503: ServiceErrorSerializer},
+        tags=['defects', ],
+        methods=["GET"]
+    )
+    @action(methods=["GET"], detail=False, url_path="template_categories", url_name='defects_template_categories')
+    @handle_ws_error
+    def list_template_categories(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        List defect Template categories
+        :param request:
+        :param request: Access token
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        categories = Defect.list_template_categories(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id
+        )
+        return Response(data=categories, status=status.HTTP_200_OK)
+
+
+################################################################################
+@staticmethod
+    def list_template_categories(client_id: str,
+                                 token: str,
+                                 project_id: str,
+                                 user_id: str = None):
+        """
+        List defect Template categories
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :return:
+        """
+        ds = KairnialDefectService(client_id=client_id,
+                                   token=token, user_id=user_id,
+                                   project_id=project_id)
+        return ds.list_template_categories()
+
+   
+
+##################################################################################
+  def list_template_categories(self):
+        """
+        List Defect Template Categories
+        """
+        return self.call(
+            action='getTemplateCategories',
+            parameters=[]
+        )

@@ -1,0 +1,753 @@
+"""
+Services that get and push information to Kairnial WS servers for bim.php and krustybim.php
+"""
+import json
+import logging
+import os
+import socket
+from hashlib import sha1
+from urllib import parse
+
+import requests
+from django.core.cache import cache
+from urllib3.exceptions import MaxRetryError, NewConnectionError
+
+from kl_common.services import KairnialWSService, KairnialService, KairnialWSServiceError
+
+
+class KairnialBIMGeometryService(KairnialService):
+    """
+    Service to query Nancy, accessible without authentication
+    """
+    project_id = None
+
+    def __init__(self, project_id: str):
+        """
+        Initialize the Kairnial Web Services library
+        :param client_id: ID of the client
+        :param token: Access token to pass to header
+        :param project_id: ID of the project
+        """
+        self.project_id = project_id.strip()
+
+    def get_url(self,
+                layer_id: str,
+                page_offset: int = 0,
+                page_limit: int = 100,
+                categories: list = None):
+        url = f'{os.environ.get("KAIRNIAL_GEOMETRY_SERVER")}/bim/{self.project_id}.{layer_id}/elements?' \
+              f'start={page_offset}&count={page_limit}&exportFacesCount=false'
+        if categories:
+            url += f"&categories={(','.join([parse.quote(cat) for cat in categories]))}"
+        return url
+
+    def call(self,
+             layer_id: str,
+             page_offset: int = 0,
+             page_limit: int = 100,
+             categories: list = None,
+             element_uuids: list = None,
+             use_cache=False
+             ):
+        """
+        Call service
+        """
+        logger = logging.getLogger('services')
+        url = self.get_url(
+            layer_id=layer_id,
+            page_offset=page_offset,
+            page_limit=page_limit,
+            categories=categories)
+        try:
+            if element_uuids:
+                data = [parse.quote(el_uuid) for el_uuid in element_uuids]
+                cache_key = sha1(f'{url}||{data}'.encode('latin1')).hexdigest()
+                if use_cache and (cached_data := cache.get(cache_key)):
+                    return cached_data
+                response = requests.post(
+                    url=url,
+                    data=data
+                )
+                logger.debug(f"--- call to {url} as POST with data {json.dumps(data)}")
+
+            else:
+                cache_key = sha1(f'{url}'.encode('latin1')).hexdigest()
+                if use_cache and (cached_data := cache.get(cache_key)):
+                    return cached_data
+                response = requests.get(url=url)
+                logger.debug(f"--- call to {url} as GET")
+        except (ConnectionError, MaxRetryError, NewConnectionError, socket.gaierror) as e:
+            print("Connection to geometry server failed", e)
+            raise KairnialWSServiceError(
+                message=str(e),
+                status=503
+            )
+        logger.debug(f"<--- response {response.status_code} with length {len(response.content)}")
+        if response.status_code != 200:
+            logger.debug(f"<--- error response content {response.content}")
+            raise KairnialWSServiceError(
+                message=response.content or 'General error',
+                status=response.status_code
+            )
+        else:
+            if use_cache:
+                cache.set(cache_key, response.content, timeout=30)
+            return response.content
+
+
+class KairnialBIMElementGeometryService(KairnialBIMGeometryService):
+    """
+    Service to fetch BIM elements from geometry server
+    """
+
+    def list(self,
+             layer_id: str,
+             page_offset: int,
+             page_limit: int,
+             filters: dict = None
+             ):
+        """
+        List BIM Elements
+        :param model_name: Name of the model to query
+        :param filters: Serialized BIMElementQuerySerializer
+        :param page_offset: value of first element in a list
+        :param page_limit: number of elements to fetch
+        :param layer_id
+        :return:
+        """
+        return self.call(
+            layer_id=layer_id,
+            page_offset=page_offset,
+            page_limit=page_limit,
+            categories=filters.get('categories'),
+            element_uuids=filters.get('uuids'),
+            use_cache=True
+        )
+
+
+class KairnialBIMElementService(KairnialWSService):
+    """
+    Services to fetch BIM elements
+    """
+    service_domain = 'bim'
+
+    def delete(self, element_id: str):
+        """
+        Archive Bim Elements
+        :param element_id: UUID of the Bim Element
+        """
+        parameter = {"uuid": element_id}
+        return self.call(
+            action='archiveElement',
+            parameters=[parameter]
+        )
+
+    def get_parameters(self, element_id: str):
+        """
+         Get BIM Layer Element Parameter Values on a project
+        :param element_id
+        :return:
+        """
+        return self.call(action='getElementParameterValues', parameters=[element_id])
+
+    def get_element_by_layer(self, serialized_data: dict, model_id: int, parent_uuid: str):
+        """
+        Get BIM Element by Layer
+        :param model_id: Numeric model ID
+        :param parent_uuid: Unique Parent Element ID
+        :param serialized_data: BIMElementRequestSerializer Data For Flag
+        :return:
+        """
+        serialized_data['modelId'] = model_id
+        serialized_data['parentElementUuids'] = [parent_uuid]
+        return self.call(action='getBimElement', parameters=[[serialized_data]])
+
+
+class KairnialBIMLayerService(KairnialWSService):
+    """
+    Service that deals with BIM layers
+    """
+    service_domain = 'bim'
+
+    def list(self, filters: dict = None):
+        """
+        List BIM layers
+        :param filters: Serialized BIMLayerQuerySerializer
+        :return:
+        """
+        parameters = {}
+        if filters:
+            parameters.update({key: value for key, value in filters.items() if value})
+        return self.call(action='getApiLayers', parameters=[parameters],
+                         use_cache=True)
+
+    def delete(self, layer_id: int):
+        """
+        Archive a Bim Layer
+        :param layer_id: Numerical ID of the Bim Layer
+        :param model_id: Numerical ID of the Bim Model
+        """
+        return self.call(
+            action='archiveLayer',
+            parameters=[layer_id]
+        )
+
+    def get_layer_last_revision(self, guid: str):
+        """
+         Get BIM Layer Last Revision on a project
+        :param guid : Universal Layer ID
+        :return:
+        """
+        parameters = {"guid": guid}
+        return self.call(service="krustybim", action='getBimLayerLastRevision', parameters=[parameters])
+
+    def statistics(self, layer_id: str):
+        """
+         Get Kairnial BIM Model Statistics
+        :param layer_id
+        :return:
+        """
+        parameters = {"r__model": layer_id}
+        return self.call(service="krustybim", action='getModelStats', parameters=[parameters])
+
+    def update(self, serialized_data: dict, layer_id: str, model_id: int):
+        """
+         Update BIM Layer
+        :param serialized_data: BIMLayerRequestSerializer validated data
+        :param layer_id: Layer ID or Unique File ID
+        :param model_id: Numeric Model ID
+        :return:
+        """
+        serialized_data['model_id'] = model_id
+        return self.call(action='updateLayer', parameters=[layer_id, serialized_data])
+
+    def partial_update(self, layer_id: int, model_id: int, recover: bool = True, serialized_data: dict = None):
+        """
+         Partially Update BIM Layer
+        :param layer_id: Numeric Layer ID
+        :param model_id: Numeric Model ID
+        :param recover: Boolean value whether to recover or update layer
+        :param serialized_data: Validated Data from BIMUpdateLayerRevisionRequestSerializer
+        :return:
+        """
+        if recover:
+            return self.call(service="krustybim", action='recoverBimLayer', parameters=[layer_id])
+        else:
+            serialized_data['layers_id'] = layer_id
+            return self.call(service="krustybim", action='bim_layer_change_revision', parameters=[serialized_data])
+
+    def revisions(self, model_id: int, layer_id: str, serialized_data: dict = None):
+        """
+        List BIM Layer Revision
+        :param model_id: Numeric Model ID
+        :param layer_id: Global Unique Layer ID
+        :param serialized_data: Validated Data from BIMLayerRevisionRequestSerializer
+        :return:
+        """
+        serialized_data['model_id'] = model_id
+        serialized_data['guid'] = layer_id
+        return self.call(service='krustybim', action='get_bim_layer_revisions', parameters=[serialized_data])
+
+    def layer_to_recover(self, model_id: int):
+        """
+         List Kairnial BIM Layer To Recover on a project
+        :param model_id: Numeric Model ID
+        :return:
+        """
+        parameters = {"bim_model_id": model_id}
+        return self.call(service="krustybim", action='get_bim_layers_to_recover', parameters=[parameters])
+
+
+class KairnialBIMAreaService(KairnialWSService):
+    """
+    Service to fetch BIM areas
+    """
+    service_domain = 'AreaManager'
+
+    def list(self,
+             page_offset: int,
+             page_limit: int,
+             filters: dict = None
+             ):
+        """
+        List BIM Areas
+        :param filters: Serialized BIMAreasQuerySerializer
+        :param page_offset: value of first element in a list
+        :param page_limit: number of elements to fetch
+        :return:
+        """
+        parameters = {
+            'LIMITSKIP': page_offset,
+            'LIMITTAKE': page_limit
+        }
+        if filters:
+            parameters.update({key: value for key, value in filters.items() if value})
+        return self.call(action='getAllAreas', parameters=[parameters],
+                         use_cache=True)
+
+
+class KairnialBIMGeometryElementService(KairnialBIMGeometryService):
+    """
+    Service to fetch BIM elements
+    """
+
+    def list(self,
+             layer_id: str,
+             page_offset: int,
+             page_limit: int,
+             filters: dict = None
+             ):
+        """
+        List BIM geometries for BIM elements
+        :param model_name: Name of the model to query
+        :param filters: Serialized BIMElementQuerySerializer
+        :param page_offset: value of first element in a list
+        :param page_limit: number of elements to fetch
+        :param layer_id
+        :return:
+        """
+        return self.call(
+            layer_id=layer_id,
+            page_offset=page_offset,
+            page_limit=page_limit,
+            categories=filters.get('categories'),
+            element_uuids=filters.get('uuids'),
+            use_cache=True
+        )
+
+
+class KairnialBIMModelService(KairnialWSService):
+    """
+        Service to fetch BIM models
+        """
+    service_domain = 'krustybim'
+
+    def list(self, filters: dict = None):
+        """
+        List BIM Models
+        :param filters: Serialized BIMAreasQuerySerializer
+        :return:
+        """
+        parameters = {}
+        if filters:
+            parameters.update({key: value for key, value in filters.items() if value})
+        return self.call(action='getBimModels', parameters=[parameters],
+                         use_cache=True)
+
+    def delete(self, model_uuid: str):
+        """
+        Archive Bim Model
+        :param model_uuid: UUID of the Bim Element
+        """
+        parameter = {"model_uuid": model_uuid}
+        return self.call(
+            action='archiveModel',
+            parameters=[parameter]
+        )
+
+    def get_layers_by_model(self, model_id: int = None):
+        """
+        List BIM layers based on Model ID
+        :param model_id: Numeric Model ID
+        :return:
+        """
+        parameters = {"modelId": model_id}
+        return self.call(service="bim", action='getLayerByModel', parameters=[parameters])
+
+    def recover(self, model_uuid: str):
+        """
+        Recover Bim Model
+        :param model_uuid: UUID of the Bim Model
+        """
+        parameter = {"model_uuid": model_uuid}
+        return self.call(
+            action='recoverModel',
+            parameters=[parameter]
+        )
+
+
+class KairnialBIMDefectModelService(KairnialWSService):
+    """
+        Service to fetch pins
+        """
+    service_domain = 'krustybim'
+
+    def list(self, model_id: str, filters: dict = None):
+        """
+        List BIM Models
+        :param filters: Serialized BIMDefectQuerySerializer
+        :param model_id: model_id in string format
+        :return:
+        """
+        parameters = {}
+        if filters:
+            parameters.update({key: value for key, value in filters.items() if value})
+        return self.call(action='get_pins_2', parameters=[parameters],
+                         use_cache=True)
+
+
+class KairnialBIMExportService(KairnialWSService):
+    """
+    Service related to export items using BCF
+    """
+    service_domain = 'BcfReviewWorker'
+
+    def add_to_queue(self, data: dict = None):
+        """
+        add export items to queue
+        :param data: Serialized BcfReviewWorkerQueueQuerySerializer
+        :return:
+        """
+        data['projectKey'] = self.project_id
+        return self.call(action='Queue', parameters=[data])
+
+
+class KairnialBIMReviewService(KairnialWSService):
+    """
+    Service related to reviews for model objects
+    """
+    service_domain = 'krustyDelegate'
+
+    def add_review(self, data: dict = None):
+        """
+        add review to model object
+        :param data: Serialized BIMReviewQuerySerializer
+        :return:
+        """
+        return self.call(action='saveGenerics', parameters=[data])
+
+    def update_review(self, review_id: str, data: dict = None):
+        """
+        add review to model object
+        :param review_id: UUID of review
+        :param data: Serialized BIMReviewCreateCommentSerializer
+        :return:
+        """
+        parameters = {'data': {'comment': data['comment'], 'parent_uuid': review_id}, 'object_uuid': review_id}
+        return self.call(action='saveComment', parameters=[parameters])
+
+    def review_comment(self, review_id: str, data: dict = None):
+        """
+        add review comment
+        :param review_id: UUID of review
+        :param data: Serialized BIMReviewUpdateSerializer
+        :return:
+        """
+        parameters = data
+        """
+            Request data changes as per the action (In case of progress_state update data is being sent separately 
+            while in another case the data is being sent as it is)
+        """
+        if len(parameters['values']) == 1:
+            parameters = parameters['values'][0]
+            parameters['object_uuid'] = review_id
+            # API call for updating a single field
+            return self.call(action='update_object_content_value', parameters=[parameters])
+        else:
+            parameters['object_items'] = [review_id]
+            # API call for updating a multiple field
+            return self.call(action='update_object_content_values', parameters=[parameters])
+
+    def save_png_image(self, data: dict):
+        """
+        Save PNG image
+        :param data: Serialized BIMSavePNGQuerySerializer
+        :return:
+        """
+        parameters = [data]
+        return self.call(service='krustybim', action='savePNG', parameters=parameters)
+
+
+class KairnialBIMFilterService(KairnialWSService):
+    """
+    Service to fetch BIM Filters
+    """
+    service_domain = 'krustybim'
+
+    def list(self):
+        """
+        List BIM Filters
+        :return:
+        """
+        return self.call(action='getFilters', parameters=[{}],
+                         use_cache=True)
+
+    def archive(self, filter_uuid: str):
+        """
+        Archive BIM Filters
+        :param filter_uuid : Unique Filter UUID
+        :return:
+        """
+        return self.call(action='archiveFilter', parameters=[{"uuid": filter_uuid}])
+
+    def archive_file_filter(self, filter_uuid: str):
+        """
+        Archive BIM File Filters
+        :param filter_uuid : Unique File Filter UUID
+        :return:
+        """
+        return self.call(action='archiveBimFileFilter', parameters=[{"object_uuid": filter_uuid}])
+
+    def recover_custom_bim_filter(self, filter_id: str):
+        """
+        Recover Custom BIM Filter
+        :param filter_id: Unique Custom Filter ID
+        :return:
+        """
+        return self.call(action='recoverBimCustomFilter', parameters=[{'object_uuid': filter_id}])
+
+    def create(self, serialized_data: dict):
+        """
+        Create Kairnial BIM Quick Filter
+        :param serialized_data: Validated data from BIMFilterRequestSerializer
+        :return:
+        """
+        parameter = \
+            {
+                "meta_type": "kbquickfilter",
+                'meta_json':
+                    {
+                        "label": serialized_data.get("label"),
+                        "dataField": serialized_data.get("dataField"),
+                        "type": serialized_data.get("type")
+                    }
+            }
+
+        if serialized_data.get("rtype"):
+            parameter["meta_json"]['rtype'] = serialized_data.get("rtype")
+            parameter["meta_json"]['rbimfield'] = True
+
+        return self.call(action='saveQuickFilter', parameters=[parameter])
+
+
+class KairnialBIMParameterTemplateService(KairnialWSService):
+    """
+    Service related to Kairnial BIM Parameter Template
+    """
+    service_domain = 'krustybim'
+
+    def list(self):
+        """
+        List BIM Parameter Template
+        :return:
+        """
+        return self.call(action='getParamsTemplates', parameters=[{}],
+                         use_cache=True)
+
+    def create(self, serialized_data: dict = None):
+        """
+        Create Kairnial BIM Parameter Template
+        :param serialized_data: Validated data from  BIMParameterTemplatesRequestSerializer
+        :return:
+        """
+        return self.call(action='saveParameterTemplate', parameters=[serialized_data])
+
+    def update(self, serialized_data: dict = None, parameter_uuid: str = None):
+        """
+        Update Kairnial BIM Parameter Template
+        :param serialized_data: Validated data from  BIMParameterTemplatesRequestSerializer
+        :param parameter_uuid : Unique Parameter ID
+        :return:
+        """
+
+        """In the PHP web services for save and update same API is written it decides on update flag, 
+                  whether to create/update that is why setting update flag to True along with UUID"""
+
+        serialized_data['uuid'] = parameter_uuid
+        serialized_data['update'] = True
+        return self.call(action='saveParameterTemplate', parameters=[serialized_data])
+
+
+class KairnialBIMSnapshotService(KairnialWSService):
+    """
+    Service related to BIM Snapshot
+    """
+    service_domain = 'bim'
+
+    def delete(self, snapshot_id: str):
+        """
+        Archive a Bim Snapshot
+        :param snapshot_id: UUID of the Bim Snapshot
+        """
+        return self.call(
+            action='archiveSnapshot',
+            parameters=[snapshot_id],
+            out_format='int'
+        )
+
+
+class KairnialBIMSystemLevelService(KairnialWSService):
+    """
+    Service for BIM System Levels
+    """
+    service_domain = 'krustybim'
+
+    def get_all_system_level(self):
+        """
+        Get ALL BIM System Level
+        """
+        return self.call(action='getAllSystemLevels', parameters=[])
+
+    def list(self, model_id: str):
+        """
+        List BIM System Level on a project
+        :param model_id : Unique Model UUID
+        """
+        return self.call(action='getSystemLevels', parameters=[{"key": [model_id]}])
+
+    def create(self, model_id: str, serialized_data: dict):
+        """
+        Create BIM System Level on a project
+        :param model_id : Unique Model UUID
+        :param serialized_data: Validated Data from BIMSystemLevelRequestSerializer
+        """
+        parameter = {"key": model_id, "data": serialized_data}
+        return self.call(action='saveSystemLevel', parameters=[parameter])
+
+    def update(self, model_id: str, serialized_data: dict, system_level_uuid: str):
+        """
+        Update BIM System Level on a project
+        :param model_id : Unique Model UUID
+        :param system_level_uuid: Unique System Level UUID
+        :param serialized_data: Validated Data from BIMSystemLevelRequestSerializer
+        """
+        parameter = {"key": model_id, "data": serialized_data, "object_uuid": system_level_uuid}
+        return self.call(action='updateSystemLevel', parameters=[parameter])
+
+    def archive(self, model_id: str, system_level_uuid: str):
+        """
+        Archive BIM System Level on a project
+        :param model_id : Unique Model UUID
+        :param system_level_uuid: Unique System Level UUID
+        """
+        parameter = {"key": model_id, "object_uuid": system_level_uuid, "recover": False}
+        return self.call(action='archiveSystemLevels', parameters=[parameter])
+
+    def recover(self, model_id: str, system_level_uuid: str):
+        """
+        Recover BIM System Level on a project
+        :param model_id : Unique Model UUID
+        :param system_level_uuid: Unique System Level UUID
+        """
+        parameter = {"key": model_id, "object_uuid": system_level_uuid, "recover": True}
+        return self.call(action='archiveSystemLevels', parameters=[parameter])
+
+
+class KairnialBIMModelFilterService(KairnialWSService):
+    """
+    Service related to BIM model filter
+    """
+    service_domain = 'bim'
+
+    def create(self, serialized_data: dict, model_id: int):
+        """
+        add BIM model filter
+        :param serialized_data: BIMModelFilterRequestSerializer validated data
+        :param model_id: Numeric model ID
+        :return:
+        """
+        parameters = [serialized_data.get('name'), model_id, serialized_data.get('content')]
+        return self.call(action='addFilter', parameters=parameters)
+
+    def list(self, model_id: int):
+        """
+        List BIM Model Filters
+        :param model_id: Numeric Model ID
+        :return:
+        """
+        return self.call(action='getFilters', parameters=[model_id])
+
+    def delete(self, model_id: int, filter_id: str):
+        """
+        Archive a Bim Model Filter
+        :param model_id: Numerical Model ID
+        :param filter_id: Unique Filter ID
+        """
+        return self.call(
+            action='deleteFilter',
+            parameters=[filter_id]
+        )
+
+    def is_model_exist(self, model_id: int):
+        """
+        Find the model by model_id
+        :param model_id: Numeric model ID
+        """
+        model_list = self.call(action='getModels', parameters=[])
+        filtered_model_list = [f for f in model_list if f.get('id') == model_id]
+        if filtered_model_list:
+            return True
+        else:
+            return False
+
+
+class KairnialBIMSettingsService(KairnialWSService):
+    """
+    Service for BIM Settings
+    """
+    service_domain = 'bim'
+
+    def create(self, model_id: int, serialized_data: dict):
+        """
+        Add BIM Settings
+        :param model_id: Numeric Model ID
+        :param serialized_data: BIMSettingsRequestSerializer validated data
+        """
+        parameters = [model_id, serialized_data.get('setting_type'), serialized_data.get('setting_key'),
+                      serialized_data.get('setting_value')]
+        return self.call(action='setSetting', parameters=parameters)
+
+    def list(self, model_id: int, serialized_data: dict):
+        """
+        List BIM Settings
+        :param model_id: Numeric Model ID
+        :param serialized_data: BIMSettingsQuerySerializer validated data
+        """
+        parameters = [model_id, serialized_data.get('setting_type'), serialized_data.get('setting_key')]
+        return self.call(action='getSetting', parameters=parameters)
+
+
+class KairnialBIMStatusService(KairnialWSService):
+    """
+    Service For BIM Status
+    """
+
+    service_domain = 'krustybim'
+
+    def archive_status(self, element_id: str, status_id: str):
+        """
+        Archive BIM Status from By Element ID
+        :param element_id: ElementId for Archive BIM Status
+        :param status_id: status_id of the Archive BIM Status
+        """
+        return self.call(
+            action='archiveStatus',
+            parameters=[{"elementUuid": element_id, "uuid": status_id}]
+        )
+
+    def get_all_status(self, element_id: str, ):
+        """
+        Get ALL BIM Status
+        :param: element_id: Universal ID of The Element
+        """
+        return self.call(action='getAllStatus', parameters=[{}])
+
+
+class KairnialBIMFieldDrawingService(KairnialWSService):
+    """
+    Service for BIM Field Drawing
+    """
+    service_domain = 'krustybim'
+
+    def get_advanced_field_drawings(self):
+        """
+        List BIM Advanced Field Drawings
+        :return:
+        """
+        return self.call(action='getAdvancedFieldDrawings', parameters=[{}])
+
+    def list(self):
+        """
+        List BIM Field Drawings
+        """
+        return self.call(action='getFieldDrawings', parameters=[{}])

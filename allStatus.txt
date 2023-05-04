@@ -1,0 +1,158 @@
+class BIMStatusViewSet(PaginatedViewSet):
+    """
+    Kairnial Archive BIM Status
+    """
+
+    @extend_schema(
+        summary=_('Kairnial Archive BIM Status By Element ID'),
+        description=_('Kairnial Archive BIM Status By Element Id'),
+        parameters=project_parameters + [
+            OpenApiParameter(name='element_id', type=OpenApiTypes.UUID, location='path',
+                             description=_("Unique Element ID")),
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("Unique Status ID")),
+        ],
+        responses={204: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim', ],
+        methods=["DELETE"]
+    )
+    @handle_ws_error
+    def destroy(self, request: TokenRequest, project_id: str, client_id: str, pk: str, element_id: str):
+        """
+        Archive BIM Status by Element ID
+        """
+        archived = BIMElement.archive_status(
+	    client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+
+            element_id=element_id,
+            status_id=pk
+        )
+        if not archived == 'wrong parameters':
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(_("BIM Status could not be archived"),
+                            status=status.HTTP_406_NOT_ACCEPTABLE)
+
+
+	@extend_schema(
+        	summary=_("List of All Kairnial BIM Status"),
+        	description=_("List of All Kairnial BIM Status"),
+        	parameters=project_parameters + [
+           	 OpenApiParameter("element_id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID representation of element ID"))
+       		 ],
+        	responses={200: BIMStatusAllSerializer, 503: ServiceErrorSerializer},
+        	tags=['bim', ],
+        	methods=["GET"],
+    	)
+    	@handle_ws_error
+   	 def list(self, request: TokenRequest, element_id: str, client_id: str, project_id: str):
+        	"""
+        	List All BIM Status on a project
+       	 	:param request:
+        	:param client_id: Client ID token
+        	:param project_id: Project RGOC ID
+        	:param element_id: Universal ID of Element ID
+        	:return:
+        	"""
+        	all_status = BIMElement.get_all_status(
+			client_id=client_id,
+            	token=request.token,
+            	user_id=request.user_id,
+            	project_id=project_id,
+
+            	element_id=element_id,
+
+        	)
+       		serializer = BIMStatusAllSerializer(all_status)
+		return Response(
+            		data=serializer.data,
+            		status=status.HTTP_200_OK
+        	)
+
+
+
+
+# methods in BimElement model
+
+ @staticmethod
+    def archive_status(
+            client_id: str,
+            project_id: str,
+            token: str,
+            element_id: str,
+            status_id: str,
+            user_id: str = None
+    ):
+        """
+        Delete BIM Status by Element
+        :param client_id: ID of the Client
+        :param project_id: RGOC Code of the Project
+        :param token: Access Token
+        :param element_id: Element ID to Archive BIM Status
+        :param user_id: User ID of the Archive BIM Status
+        :param status_id: pk
+        :return
+        """
+        kbss = KairnialBIMStatusService(project_id=project_id, user_id=user_id, client_id=client_id, token=token)
+        return kbss.archive_status(element_id=element_id, status_id=status_id)
+
+    @staticmethod
+    def get_all_status(
+            client_id: str,
+            token: str,
+            project_id: str,
+            user_id: str = None,
+            element_id: str = None
+    ):
+        """
+        BIM Get All Status on a project
+        :param client_id: ID of the client
+        :param token: Access token
+        :param project_id: RGOC Code of the project
+        :param user_id: ID of the user
+        :param element_id: Universal ID of the Element
+        :return:
+        """
+        kbl = KairnialBIMStatusService(client_id=client_id, token=token, project_id=project_id,
+                                       user_id=user_id)
+
+        return kbl.get_all_status(element_id=element_id)
+
+# service
+
+class KairnialBIMStatusService(KairnialWSService):
+    """
+    Service For BIM Status
+    """
+
+    service_domain = 'krustybim'
+
+    def archive_status(self, element_id: str, status_id: str):
+        """
+        Archive BIM Status from By Element ID
+        :param element_id: ElementId for Archive BIM Status
+        :param status_id: status_id of the Archive BIM Status
+        """
+        return self.call(
+            action='archiveStatus',
+            parameters=[{"elementUuid": element_id, "uuid": status_id}]
+        )
+
+    def get_all_status(self, element_id: str, ):
+        """
+        Get ALL BIM Status
+        :param: element_id: Universal ID of The Element
+        """
+        return self.call(action='getAllStatus', parameters=[{}])
+
+
+# test
+resp = kc.delete(
+            'bim/elements/3b8fc797-187b-46df-bf07-33718bf9fa8f/status/2266b868-4938-11ec-87cc-15e2709e3978/'
+        )
+        self.assertEqual(resp.status_code, 204)
+

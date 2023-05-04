@@ -1,0 +1,1992 @@
+"""
+BIM viewsets
+"""
+import json
+
+from django.utils.translation import gettext as _
+from rest_framework import status
+from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser
+from rest_framework.response import Response
+
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema, OpenApiParameter
+
+from kl_common import JSON_CONTENT_TYPE
+from kl_common.decorators import handle_ws_error
+from kl_common.requests import TokenRequest
+from kl_common.responses import PaginatedResponse
+from kl_common.serializers import ServiceErrorSerializer
+from kl_common.services import KairnialWSServiceError
+from kl_common.viewsets import project_parameters, pagination_parameters, PaginatedViewSet
+
+from dynamics_apis.defects.serializers import BIMDefectQuerySerializer, BIMDefectSerializer
+from .models import Layer, Area, BIMElement, BIMModel, BIMExport, BIMParameterTemplate, \
+    BIMFilter, BIMSnapshot, BIMDefectModel, BIMSystemLevel, BIMReview, BIMModelFilter, BIMSettings, BIMFieldDrawing
+from .serializers import BIMLayerSerializer, BIMLayerQuerySerializer, BIMAreaSerializer, \
+    BIMAreaQuerySerializer, BIMElementQuerySerializer, BIMElementSerializer, BIMModelQuerySerializer, \
+    BIMModelSerializer, BcfReviewWorkerQueueQuerySerializer, BcfReviewWorkerQueueSerializer, \
+    BIMParameterTemplateSerializer, BIMLayerByModelSerializer, BIMFilterSerializer, \
+    BIMSystemLevelAllSerializer, BIMLayerLastRevisionSerializer, BIMParameterValueSerializer, BIMReviewCreateSerializer, \
+    BIMReviewUpdateSerializer, BIMReviewCreateCommentSerializer, BIMSavePNGCreateSerializer, BIMSavePNGSerializer, \
+    BIMSystemLevelInfoSerializer, BIMSystemLevelRequestSerializer, BIMSystemLevelSerializer, \
+    BIMSystemLevelArchiveSerializer, BIMParameterTemplateRequestSerializer, BIMUpdateLayerRevisionRequestSerializer, \
+    BIMUpdateLayerRevisionSerializer, BIMModelFilterRequestSerializer, BIMModelFilterSerializer, \
+    BIMSettingsRequestSerializer, BIMSettingsQuerySerializer, BIMSettingsSerializer, BIMStatusAllSerializer, \
+    BIMFieldDrawingSerializer, BIMAdvancedFieldDrawingSerializer, BIMLayerRequestSerializer, \
+    BIMModelStatisticsSerializer, BIMLayerRevisionRequestSerializer, BIMElementResponseSerializer, \
+    BIMElementRequestSerializer, BIMLayerRecoverSerializer, BIMFilterRequestSerializer
+
+
+class BIMLayerViewSet(PaginatedViewSet):
+    """
+    A ViewSet for listing BIM Layers
+    """
+    parser_classes = (MultiPartParser,)
+
+    @extend_schema(
+        summary=_("List Kairnial BIM layers"),
+        description=_("List Kairnial BIM layers on this project"),
+        parameters=project_parameters + pagination_parameters + [
+            BIMLayerQuerySerializer,  # serializer fields are converted to parameters
+        ],
+        responses={200: BIMLayerSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/layers', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, project_id: str, model_id: str):
+        """
+        List BIM layers on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id
+        :return:
+        """
+        blqs = BIMLayerQuerySerializer(data=request.GET)
+        blqs.is_valid()
+        page_offset, page_limit = self.get_pagination(request=request)
+        total, layer_list, page_offset, page_limit = Layer.paginated_list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            page_offset=page_offset,
+            page_limit=page_limit,
+            filters=blqs.validated_data,
+            items_key='items'
+        )
+        serializer = BIMLayerSerializer(layer_list, many=True)
+        return PaginatedResponse(
+            data=serializer.data,
+            total=total,
+            page_offset=page_offset,
+            page_limit=page_limit
+        )
+
+    @extend_schema(
+        summary=_("Get Kairnial BIM Layer Last Revision"),
+        description=_("Get Kairnial BIM Layer Last Revision on this project"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_('Universal ID of the layer'))
+        ],
+        responses={200: BIMLayerLastRevisionSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/layers', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def retrieve(self, request: TokenRequest, client_id: str, project_id: str, model_id: str, pk: str):
+        """
+        Get BIM Layer Last Revision on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id: Model ID
+        :param pk: Model File UUID
+        :return:
+        """
+        last_revision = Layer.get_layer_last_revision(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            guid=pk
+        )
+        last_revision_serializer = BIMLayerLastRevisionSerializer(last_revision)
+        return Response(
+            data=last_revision_serializer.data,
+            status=status.HTTP_200_OK
+        )
+
+    @extend_schema(
+        summary=_("Update Kairnial BIM layer"),
+        description=_("Update Kairnial BIM layer on this project"),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_('Numeric Model ID')),
+            OpenApiParameter("id", OpenApiTypes.STR, OpenApiParameter.PATH,
+                             description=_('Layer ID or Unique File ID. If is_file_id flag is set to true then this '
+                                           'field must contain a UUID value otherwise numeric'))
+        ],
+        request=BIMLayerRequestSerializer,
+        responses={200: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/layers', ],
+        methods=["PUT"]
+    )
+    @handle_ws_error
+    def update(self, request: TokenRequest, client_id: str, project_id: str, model_id: int, pk: str):
+        """
+        Update BIM Layer
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id: Numeric Model ID
+        :param pk: Layer ID or Unique File ID
+        :return:
+        """
+        blrs = BIMLayerRequestSerializer(data=request.data)
+        blrs.is_valid()
+        # Check for the model id and layer id/file id
+        layer_list = Layer.list(
+            client_id=client_id,
+            user_id=request.user_id,
+            token=request.token,
+            project_id=project_id,
+            filters={}
+        )
+        is_model_exist = False
+        is_layer_exist = False
+        # check for layer id/file id
+        if not blrs.validated_data.get('is_file_id'):
+            filtered_layer_list = [f for f in layer_list if f.get('layers_id') == pk]
+        else:
+            filtered_layer_list = [f for f in layer_list if f.get('file') == pk]
+        if filtered_layer_list:
+            is_layer_exist = True
+        # check for model id
+        filtered_layer_list = [f for f in layer_list if f.get('model_id') == model_id]
+        if filtered_layer_list:
+            is_model_exist = True
+
+        if not (is_model_exist or is_layer_exist):
+            return Response(_("Model ID or Layer ID or File ID do not exist"), status=status.HTTP_400_BAD_REQUEST)
+
+        update_layer = Layer.update(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            serialized_data=blrs.validated_data,
+            model_id=model_id,
+            layer_id=pk
+        )
+        if not update_layer:
+            return Response(_("Bim Layer could not be updated"), status=status.HTTP_400_BAD_REQUEST)
+        return Response(_("Bim Layer updated successfully"), status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary=_("Recover Kairnial BIM layer"),
+        description=_("Recover Kairnial BIM layer on this project"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_('Numeric Layer ID')),
+            OpenApiParameter("model_id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_('Numeric Model ID'))
+        ],
+        responses={200: OpenApiTypes.STR, 400: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/layers', ],
+        methods=["PATCH"]
+    )
+    @handle_ws_error
+    def partial_update(self, request: TokenRequest, client_id: str, project_id: str, pk: int, model_id: int):
+        """
+        Recover BIM Layer
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id: Numeric Model ID
+        :param pk: Numeric Layer ID
+        :return:
+        """
+        layer_list = Layer.list(
+            client_id=client_id,
+            user_id=request.user_id,
+            token=request.token,
+            project_id=project_id,
+            filters={}
+        )
+        # check for layer id/file id
+        filtered_layer_list = [f for f in layer_list if f.get('layers_id') == pk]
+        if filtered_layer_list:
+            return Response(_("Layer is not archived"), status=status.HTTP_400_BAD_REQUEST)
+        recover_layer = Layer.partial_update(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            layer_id=pk,
+            model_id=model_id
+        )
+        if not recover_layer:
+            return Response(_("Bim Layer could not be recovered"), status=status.HTTP_400_BAD_REQUEST)
+        return Response(_("Bim Layer recovered successfully"), status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary=_("Delete a BIM Layer"),
+        description=_("Delete an existing BIM Layer"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_("Numerical ID of the Layer")),
+            OpenApiParameter("model_id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_("Numerical ID of the Model"))
+        ],
+        responses={204: OpenApiTypes.STR, 400: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/layers', ],
+        methods=["DELETE"]
+    )
+    @handle_ws_error
+    def destroy(self, request, client_id: str, project_id: str, model_id: int, pk: int):
+        """
+        Archive Bim Layer
+        """
+        deleted = Layer.delete(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            model_id=model_id,
+            layer_id=pk
+        )
+        if deleted:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(_("Bim Layer could not be deleted"),
+                            status=status.HTTP_406_NOT_ACCEPTABLE)
+
+    @extend_schema(
+        summary=_("Get Kairnial BIM model statistics"),
+        description=_("Get Kairnial BIM Model Statistics on this project"),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.STR, OpenApiParameter.PATH,
+                             description=_("Model file ID (see /layers/)"))
+        ],
+        responses={200: BIMModelStatisticsSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/layers', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    @action(methods=['GET'], detail=False, url_path='model_stats', url_name='model_stats')
+    def get_model_statistics(self, request: TokenRequest, client_id: str, project_id: str, model_id: str):
+        """
+        Get Kairnial BIM Model Statistics
+        :param request:
+        :param client_id
+        :param project_id
+        :param model_id : Model File String ID
+        :return:
+        """
+        model_stats = Layer.statistics(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            layer_id=model_id,
+        )
+        if not model_stats:
+            return Response(data=_(f"Model Statistics Not found for r__model: {model_id}"), status=status.HTTP_200_OK)
+
+        serializer = BIMModelStatisticsSerializer(model_stats)
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary=_("List Kairnial BIM Layer Revision"),
+        description=_("List Kairnial BIM Layer Revision By Model"),
+        parameters=project_parameters + [OpenApiParameter("model_id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                                                          description=_("Model Numeric ID (see /layers/)")),
+                                         OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                                                          description=_("Global Unique Layer ID")),
+                                         BIMLayerRevisionRequestSerializer],
+        responses={200: BIMLayerSerializer(many=True), 503: ServiceErrorSerializer},
+        tags=['bim/layers', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    @action(methods=['GET'], detail=True, url_path='revisions', url_name='layer_revisions')
+    def revisions(self, request: TokenRequest, client_id: str, project_id: str, model_id: int, pk: str):
+        """
+        List Kairnial BIM Layer revisions on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id: Numeric Model ID
+        :param pk : Unique Layer ID
+        :return:
+        """
+        blr = BIMLayerRevisionRequestSerializer(data=request.GET)
+        if not blr.is_valid():
+            return Response(blr.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        layer_revision = Layer.revisions(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            model_id=model_id,
+            layer_id=pk,
+            serialized_data=blr.validated_data
+        )
+        serializer = BIMLayerSerializer(layer_revision, many=True)
+        return Response(
+            data=serializer.data,
+            status=status.HTTP_200_OK
+        )
+
+    @extend_schema(
+        summary=_("Update Kairnial BIM Layer Revision"),
+        description=_("Update Kairnial BIM Layer Revision By Model"),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_("Model Numeric ID (see /layers/)")),
+            OpenApiParameter("id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_("Layer Numeric ID"))
+        ],
+        request=BIMUpdateLayerRevisionRequestSerializer,
+        responses={200: BIMUpdateLayerRevisionSerializer, 400: OpenApiTypes.OBJECT, 503: ServiceErrorSerializer},
+        tags=['bim/layers', ],
+        methods=["PATCH"],
+        operation_id="bim_models_layer_revision_partial_update"
+    )
+    @handle_ws_error
+    # There is a conflict in URL methods due to action decorators that's url path is changed
+    @action(methods=['PATCH'], detail=True, url_path='update_revisions', url_name='layer_revision_update')
+    def update_layer_revision(self, request: TokenRequest, client_id: str, project_id: str, pk: int, model_id: int):
+        """
+        Update Kairnial BIM Layer Revision on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id : Numeric Model ID
+        :param pk: Numeric Layer ID
+        :return:
+        """
+        bulrrs = BIMUpdateLayerRevisionRequestSerializer(data=request.data)
+        if not bulrrs.is_valid():
+            return Response(bulrrs.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        update_layer_revision = Layer.partial_update(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            model_id=model_id,
+            serialized_data=bulrrs.validated_data,
+            layer_id=pk,
+            recover=False
+        )
+        serializer = BIMUpdateLayerRevisionSerializer(update_layer_revision['origine'])
+        if update_layer_revision['success']:
+            return Response(
+                data=serializer.data,
+                status=status.HTTP_200_OK
+            )
+        else:
+            return Response(
+                data=_('Layer Revision could not be updated'),
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @extend_schema(
+        summary=_("List Kairnial BIM Layer To Recover"),
+        description=_("List Kairnial BIM Layer To Recover on this project"),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_('Numeric Model ID'))
+        ],
+        responses={200: BIMLayerRecoverSerializer(many=True), 503: ServiceErrorSerializer},
+        tags=['bim/layers', ],
+        methods=["GET"],
+        operation_id="bim_models_layers_recover_list"
+    )
+    @handle_ws_error
+    @action(methods=['GET'], detail=False, url_path='recover', url_name='recover')
+    def list_layer_to_recover(self, request: TokenRequest, client_id: str, project_id: str, model_id: int):
+        """
+        List Kairnial BIM Layer To Recover
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id: Model ID
+        :return:
+        """
+        layer_list = Layer.layer_to_recover(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            model_id=model_id
+        )
+        # backed WS is not filtering the records, therefore here added explicit filtering
+        filtered_layer_list = [f for f in layer_list.get("items") if int(f.get('archive')) == 1]
+        serializer = BIMLayerRecoverSerializer(filtered_layer_list, many=True)
+        return Response(
+            data=serializer.data,
+            status=status.HTTP_200_OK
+        )
+
+
+class BIMAreaViewSet(PaginatedViewSet):
+    """
+    A ViewSet for listing BIM Areas
+    """
+
+    @extend_schema(
+        summary=_("List Kairnial BIM areas"),
+        description=_("List Kairnial BIM areas on this project"),
+        parameters=project_parameters + pagination_parameters + [
+            BIMAreaQuerySerializer,  # serializer fields are converted to parameters
+        ],
+        responses={200: BIMAreaSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/areas', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        List BIM areas on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        baqs = BIMAreaQuerySerializer(data=request.GET)
+        baqs.is_valid()
+        page_offset, page_limit = self.get_pagination(request=request)
+        total, layer_list, page_offset, page_limit = Area.paginated_list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            page_offset=page_offset,
+            page_limit=page_limit,
+            filters=baqs.validated_data,
+            items_key='items'
+        )
+        serializer = BIMAreaSerializer(layer_list, many=True)
+        return PaginatedResponse(
+            data=serializer.data,
+            total=total,
+            page_offset=page_offset,
+            page_limit=page_limit
+        )
+
+
+class BIMModelViewSet(PaginatedViewSet):
+    """
+    A ViewSet for listing BIM Models
+    """
+
+    @extend_schema(
+        summary=_("List Kairnial BIM models"),
+        description=_("List Kairnial BIM models on this project"),
+        parameters=project_parameters + pagination_parameters + [
+            BIMModelQuerySerializer,  # serializer fields are converted to parameters
+        ],
+        responses={200: BIMModelSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/models', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        List BIM models on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        bmqs = BIMModelQuerySerializer(data=request.GET)
+        bmqs.is_valid()
+        page_offset, page_limit = self.get_pagination(request=request)
+        total, model_list, page_offset, page_limit = BIMModel.paginated_list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            page_offset=page_offset,
+            page_limit=page_limit,
+            filters=bmqs.validated_data,
+            items_key='items'
+        )
+        serializer = BIMModelSerializer(model_list, many=True)
+        return PaginatedResponse(
+            data=serializer.data,
+            total=total,
+            page_offset=page_offset,
+            page_limit=page_limit
+        )
+
+    @extend_schema(
+        summary=_("Delete a BIM Model"),
+        description=_("Delete an existing BIM Model"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID of the Bim Model")),
+        ],
+        responses={204: OpenApiTypes.STR, 400: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/models', ],
+        methods=["DELETE"]
+    )
+    @handle_ws_error
+    def destroy(self, request, client_id: str, project_id: str, pk: str):
+        """
+        Archive Bim Model
+        """
+        deleted = BIMModel.delete(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            model_uuid=pk
+        )
+        if deleted:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(_("Bim Model could not be deleted"),
+                            status=status.HTTP_406_NOT_ACCEPTABLE)
+
+    @extend_schema(
+        summary=_("List Kairnial BIM layers By Model"),
+        description=_("List Kairnial BIM layers By Model"),
+        parameters=project_parameters + [OpenApiParameter("id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                                                          description=_("Model Numeric ID (see /layers/)"))],
+        responses={200: BIMLayerByModelSerializer(many=True), 503: ServiceErrorSerializer},
+        tags=['bim/models', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    @action(methods=['GET'], detail=True, url_path='layers_by_model', url_name='layers_by_model')
+    def get_layers_by_model(self, request: TokenRequest, client_id: str, project_id: str, pk: int):
+        """
+        List BIM layers By Model on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param pk : Numeric Model ID
+        :return:
+        """
+        layer_by_model = BIMModel.get_layers_by_model(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            model_id=pk
+        )
+        serializer = BIMLayerByModelSerializer(layer_by_model, many=True)
+        return Response(
+            data=serializer.data,
+            status=status.HTTP_200_OK
+        )
+
+    @extend_schema(
+        summary=_("Recover a BIM Model"),
+        description=_("Recover an archived BIM Model"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID of the Bim Model")),
+        ],
+        responses={200: OpenApiTypes.STR, 400: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/models', ],
+        methods=["PATCH"]
+    )
+    @handle_ws_error
+    def partial_update(self, request, client_id: str, project_id: str, pk: str):
+        """
+        Recover Bim Model
+        """
+        recovered = BIMModel.recover(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            model_uuid=pk
+        )
+        if recovered:
+            return Response(_("Bim Model has been recovered successfully"), status=status.HTTP_200_OK)
+
+        return Response(_("Bim Model could not be recovered"), status=status.HTTP_406_NOT_ACCEPTABLE)
+
+
+class BIMDefectViewSet(PaginatedViewSet):
+    """
+    Viewset for Defects
+    """
+
+    @extend_schema(
+        summary=_("List Kairnial bim defects"),
+        description=_("List of Kairnial bim defects in this project"),
+        parameters=project_parameters + pagination_parameters + [
+            BIMDefectQuerySerializer
+        ],
+        responses={200: BIMDefectSerializer, 400: OpenApiTypes.OBJECT, 503: ServiceErrorSerializer},
+        tags=['bim/defects', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, project_id: str, model_id: str):
+        """
+        List of bim defects
+        """
+        bpr = BIMDefectQuerySerializer(data=request.GET)
+        bpr.is_valid()
+        page_offset, page_limit = self.get_pagination(request=request)
+        total, model_list, page_offset, page_limit = BIMDefectModel.paginated_list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            page_offset=page_offset,
+            page_limit=page_limit,
+            filters=bpr.validated_data,
+            model_id=model_id
+        )
+        serializer = BIMDefectSerializer(model_list, many=True)
+        return PaginatedResponse(
+            data=serializer.data,
+            total=total,
+            page_offset=page_offset,
+            page_limit=page_limit
+        )
+
+
+class BIMExportViewSet(PaginatedViewSet):
+    """
+    A ViewSet for exporting items from BIM like review
+    """
+
+    @extend_schema(
+        summary=_("Export review items to another BIM application using BCF, adding to Queue"),
+        description=_("Export review items to another BIM application using BCF, adding to Queue"),
+        parameters=project_parameters,
+        request=BcfReviewWorkerQueueQuerySerializer,
+        responses={200: BcfReviewWorkerQueueSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/exports', ],
+        methods=["POST"]
+    )
+    @handle_ws_error
+    def create(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        add to queue using BCF
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        brwqs = BcfReviewWorkerQueueQuerySerializer(data=request.data)
+        if not brwqs.is_valid():
+            return Response(brwqs.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        add_to_queue_data = BIMExport.add_to_queue(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            data=brwqs.validated_data
+        )
+        if not add_to_queue_data:
+            return Response(_("Unable to add export to Queue"), status=status.HTTP_400_BAD_REQUEST)
+
+        response_serializer = BcfReviewWorkerQueueSerializer(add_to_queue_data)
+        return Response(data=response_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class BIMReviewViewSet(PaginatedViewSet):
+    """
+    A ViewSet for dealing with reviews for objects
+    """
+    parser_classes = (MultiPartParser,)
+
+    @extend_schema(
+        summary=_("Add a review"),
+        description=_("Add review to objects in a model"),
+        parameters=project_parameters,
+        request=BIMReviewCreateSerializer,
+        responses={201: OpenApiTypes.UUID, 503: ServiceErrorSerializer},
+        tags=['bim/reviews', ],
+        methods=["POST"]
+    )
+    @handle_ws_error
+    def create(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        Add a review to model object
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        brqs = BIMReviewCreateSerializer(data=request.data)
+        if not brqs.is_valid():
+            return Response(brqs.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+        add_review_response = BIMReview.add_review(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            data=brqs.validated_data
+        )
+        if not add_review_response:
+            return Response(_("Unable to add a review to object"), status=status.HTTP_400_BAD_REQUEST)
+        return Response(data=add_review_response, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        summary=_("Update a review"),
+        description=_("Update a review to objects in a model"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID of the review")),
+        ],
+        request=BIMReviewUpdateSerializer,
+        responses={200: OpenApiTypes.OBJECT, 400: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/reviews', ],
+        methods=["PUT"]
+    )
+    @handle_ws_error
+    def update(self, request, client_id: str, project_id: str, pk: str):
+        """
+       Update a review to model object
+       :param request:
+       :param client_id: Client ID token
+       :param project_id: Project RGOC ID
+       :param pk: review id
+       :return:
+       """
+        brus = BIMReviewUpdateSerializer(data=request.data)
+        if not brus.is_valid():
+            return Response(brus.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+        update_review_response = BIMReview.update_review(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            data=brus.validated_data,
+            review_id=pk
+        )
+        if not update_review_response:
+            return Response(_("Unable to update a review to object"), status=status.HTTP_400_BAD_REQUEST)
+        return Response(data=update_review_response, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary=_("Comment a review"),
+        description=_("Add a comment to a review"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID of the review")),
+        ],
+        request=BIMReviewCreateCommentSerializer,
+        responses={200: OpenApiTypes.STR, 400: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/reviews', ],
+        methods=["POST"]
+    )
+    @action(methods=['POST'], detail=True, url_path='comments', url_name='bim_review_comment')
+    @handle_ws_error
+    def review_comment(self, request, client_id: str, project_id: str, pk: str):
+        """
+       Add a comment to a review
+       :param request:
+       :param client_id: Client ID token
+       :param project_id: Project RGOC ID
+       :param pk: review id
+       :return:
+       """
+        brcs = BIMReviewCreateCommentSerializer(data=request.data)
+        if not brcs.is_valid():
+            return Response(brcs.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+        review_comment_response = BIMReview.update_review(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            data=brcs.validated_data,
+            review_id=pk
+        )
+        if not review_comment_response:
+            return Response(_("Unable to add a comment toa review"), status=status.HTTP_400_BAD_REQUEST)
+        return Response(data=review_comment_response, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary=_("save PNG image"),
+        description=_("Save PNG image for adding reviews to a objects"),
+        parameters=project_parameters,
+        request=BIMSavePNGCreateSerializer,
+        responses={200: BIMSavePNGSerializer, 400: OpenApiTypes.OBJECT,
+                   503: ServiceErrorSerializer},
+        tags=['bim/reviews', ],
+        methods=["POST"]
+    )
+    @action(methods=['POST'], detail=False, url_path='images', url_name='save_png_image')
+    @handle_ws_error
+    def save_png_image(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        Save PNG image
+        """
+        request_data = {'path': request.data['path'], 'source': 'data:image/png;base64,' + request.data['source']}
+
+        request_serializer = BIMSavePNGCreateSerializer(data=request_data)
+        if not request_serializer.is_valid():
+            return Response(request_serializer.errors, content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            response = BIMReview.save_png_image(
+                data=request_serializer.validated_data,
+                client_id=client_id,
+                user_id=request.user_id,
+                token=request.token,
+                project_id=project_id)
+            if response:
+                resp_serializer = BIMSavePNGSerializer(data=response)
+                if not resp_serializer.is_valid():
+                    return Response(data=resp_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+                return Response(data=resp_serializer.data, status=status.HTTP_200_OK)
+            return Response("Unable to save the image", status=status.HTTP_400_BAD_REQUEST)
+
+        except KairnialWSServiceError as e:
+            return Response(e.error, status=status.HTTP_400_BAD_REQUEST)
+
+
+class BIMFilterViewSet(PaginatedViewSet):
+    """
+    A ViewSet for BIM Filters
+    """
+
+    @extend_schema(
+        summary=_("List Kairnial BIM Filters"),
+        description=_("List Kairnial BIM Filters on this project"),
+        parameters=project_parameters + pagination_parameters,
+        responses={200: BIMFilterSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/filters', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        List BIM Filters on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        page_offset, page_limit = self.get_pagination(request=request)
+        total, filter_list, page_offset, page_limit = BIMFilter.paginated_list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            page_offset=page_offset,
+            page_limit=page_limit
+        )
+        serializer = BIMFilterSerializer(filter_list, many=True)
+        return PaginatedResponse(
+            data=serializer.data,
+            total=total,
+            page_offset=page_offset,
+            page_limit=page_limit
+        )
+
+    @extend_schema(
+        summary=_("Archive Kairnial BIM Filters"),
+        description=_("Archive Kairnial BIM Filters on this project"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID of the BIM Filter")),
+        ],
+        responses={204: OpenApiTypes.NONE, 400: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/filters', ],
+        methods=["DELETE"]
+    )
+    @handle_ws_error
+    def destroy(self, request: TokenRequest, client_id: str, project_id: str, pk: str):
+        """
+        Archive BIM Filters on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param pk : Unique Filter UUID
+        :return:
+        """
+        archived = BIMFilter.archive(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            filter_uuid=pk
+        )
+        if archived:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(_("Bim Filter could not be archived"),
+                            status=status.HTTP_406_NOT_ACCEPTABLE)
+
+    @extend_schema(
+        summary=_("Recover Kairnial Custom Bim Filter"),
+        description=_("Recover Kairnial Custom Bim Filter on this project"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID representation of Custom BIM Filter Unique ID"))
+        ],
+        responses={200: OpenApiTypes.STR, 400: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/filters', ],
+        methods=["PATCH"]
+    )
+    @handle_ws_error
+    @action(methods=['PATCH'], detail=True, url_path='recover', url_name='recover_custom_bim_filter')
+    def recover_custom_bim_filter(self, request: TokenRequest, client_id: str, project_id: str, pk: str):
+        """
+        Recover Custom BIM Filter on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param pk : Unique BIM Custom Filter ID
+        :return:
+        """
+        recovered = BIMFilter.recover_custom_bim_filter(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            filter_id=pk
+        )
+        if not recovered:
+            return Response(
+                data=_('Unable to recover BIM Custom Filter'),
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        return Response(
+            data=_('BIM Custom Filter recovered successfully'),
+            status=status.HTTP_200_OK
+        )
+
+    @extend_schema(
+        summary=_("Archive Kairnial BIM File Filters"),
+        description=_("Archive Kairnial BIM File Filters on this project"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("Object UUID of the BIM File Filter")),
+        ],
+        responses={204: OpenApiTypes.NONE, 400: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/filters', ],
+        methods=["DELETE"]
+    )
+    @handle_ws_error
+    @action(methods=['DELETE'], detail=True, url_path='file_filter', url_name='file_filter')
+    def archive_file_filter(self, request: TokenRequest, client_id: str, project_id: str, pk: str):
+        """
+        Archive BIM File Filters on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param pk : Unique File Filter UUID
+        :return:
+        """
+        archived = BIMFilter.archive_file_filter(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            filter_uuid=pk
+        )
+        # here the backend WS responds with success flag
+        if archived and archived['success']:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(_("Bim File Filter could not be archived"),
+                            status=status.HTTP_406_NOT_ACCEPTABLE)
+
+    @extend_schema(
+        summary=_("Create Kairnial BIM Quick Filter"),
+        description=_("Create Kairnial BIM Quick Filter on this project"),
+        parameters=project_parameters,
+        request=BIMFilterRequestSerializer,
+        responses={201: BIMFilterSerializer(many=True), 503: ServiceErrorSerializer},
+        tags=['bim/filters', ],
+        methods=["POST"]
+    )
+    @handle_ws_error
+    def create(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        Create Kairnial BIM Quick Filter
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        bfrs = BIMFilterRequestSerializer(data=request.data)
+        if not bfrs.is_valid():
+            return Response(bfrs.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        created_filter_id = BIMFilter.create(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            serialized_data=bfrs.validated_data
+        )
+        filter_list = BIMFilter.list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id
+        )
+        created_filter = [f for f in filter_list if f.get('uuid') == str(created_filter_id)]
+        serializer = BIMFilterSerializer(created_filter, many=True)
+        return Response(data=serializer.data, status=status.HTTP_201_CREATED)
+
+
+class BIMParameterTemplatesViewSet(PaginatedViewSet):
+    """
+    A ViewSet for BIM Parameter Templates
+    """
+
+    @extend_schema(
+        summary=_("List Kairnial BIM Param Templates"),
+        description=_("List Kairnial BIM Param Templates on this project"),
+        parameters=project_parameters + pagination_parameters,
+        responses={200: BIMParameterTemplateSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/parameter_template', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        List BIM Param Templates on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        page_offset, page_limit = self.get_pagination(request=request)
+        total, parameter_list, page_offset, page_limit = BIMParameterTemplate.paginated_list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            page_offset=page_offset,
+            page_limit=page_limit
+        )
+        serializer = BIMParameterTemplateSerializer(parameter_list, many=True)
+        return PaginatedResponse(
+            data=serializer.data,
+            total=total,
+            page_offset=page_offset,
+            page_limit=page_limit
+        )
+
+    @extend_schema(
+        summary=_("Create Kairnial BIM Parameter Template"),
+        description=_("Create Kairnial BIM Parameter Template"),
+        parameters=project_parameters,
+        request=BIMParameterTemplateRequestSerializer,
+        responses={200: OpenApiTypes.UUID, 503: ServiceErrorSerializer},
+        tags=['bim/parameter_template', ],
+        methods=["POST"]
+    )
+    @handle_ws_error
+    def create(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        Create Kairnial BIM Parameter Template
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        bpd = BIMParameterTemplateRequestSerializer(data=request.data)
+        if not bpd.is_valid():
+            return Response(bpd.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        parameter_template = BIMParameterTemplate.create(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            serialized_data=bpd.validated_data
+        )
+        return Response(data=parameter_template, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        summary=_("Update Kairnial BIM Parameter Template"),
+        description=_("Update Kairnial BIM Parameter Template"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID Representation of Parameter ID, see list parameter_template for "
+                                           "details"))],
+        request=BIMParameterTemplateRequestSerializer,
+        responses={200: OpenApiTypes.UUID, 503: ServiceErrorSerializer},
+        tags=['bim/parameter_template', ],
+        methods=["PUT"]
+    )
+    @handle_ws_error
+    def update(self, request: TokenRequest, client_id: str, project_id: str, pk: str):
+        """
+        Update Kairnial BIM Parameter Template
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param pk : Unique Parameter ID
+        :return:
+        """
+        bpd = BIMParameterTemplateRequestSerializer(data=request.data)
+        if not bpd.is_valid():
+            return Response(bpd.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        parameter_template = BIMParameterTemplate.update(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            serialized_data=bpd.validated_data,
+            parameter_uuid=pk
+        )
+        return Response(data=parameter_template, status=status.HTTP_200_OK)
+
+
+class BIMSnapshotViewSet(PaginatedViewSet):
+    """
+    A ViewSet for BIM Snapshot
+    """
+
+    @extend_schema(
+        summary=_("Delete a BIM Snapshot"),
+        description=_("Delete an existing BIM Snapshot"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID ID of the BIM Snapshot")),
+        ],
+        responses={204: OpenApiTypes.STR, 400: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/snapshots', ],
+        methods=["DELETE"]
+    )
+    @handle_ws_error
+    def destroy(self, request, client_id: str, project_id: str, pk: str):
+        """
+        Archive Bim Snapshot
+        """
+        deleted = BIMSnapshot.delete(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            snapshot_id=pk
+        )
+        if deleted:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(_("Bim Snapshot could not be deleted"),
+                            status=status.HTTP_406_NOT_ACCEPTABLE)
+
+
+class BIMSystemLevelViewSet(PaginatedViewSet):
+    """
+    A ViewSet for BIM System Level
+    """
+    parser_classes = (MultiPartParser,)
+
+    @extend_schema(
+        summary=_("Get All Kairnial BIM System Levels"),
+        description=_("Get All Kairnial BIM System Levels"),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID representation of Model Unique ID"))
+        ],
+        responses={200: BIMSystemLevelAllSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/system_levels', ],
+        methods=["GET"],
+        operation_id="bim_models_system_level_all_list"
+    )
+    @handle_ws_error
+    @action(methods=['GET'], detail=False, url_path='all', url_name='all')
+    def get_all_system_level(self, request: TokenRequest, client_id: str, project_id: str, model_id: str):
+        """
+        List All BIM System Levels on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id : Unique Model UUID
+        :return:
+        """
+        system_levels = BIMSystemLevel.get_all_system_level(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            model_id=model_id
+        )
+        serializer = BIMSystemLevelAllSerializer(system_levels)
+        return Response(
+            data=serializer.data,
+            status=status.HTTP_200_OK
+        )
+
+    @extend_schema(
+        summary=_("List Kairnial BIM System Level"),
+        description=_("List Kairnial BIM System Level"),
+        parameters=project_parameters + pagination_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID representation of Model Unique ID"))
+        ],
+        responses={200: BIMSystemLevelInfoSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/system_levels', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, project_id: str, model_id: str):
+        """
+        Get BIM System Level on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id : Unique Model UUID
+        :return:
+        """
+        page_offset, page_limit = self.get_pagination(request=request)
+        total, system_level_list, page_offset, page_limit = BIMSystemLevel.paginated_list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            page_offset=page_offset,
+            page_limit=page_limit,
+            model_id=model_id
+        )
+        serializer = BIMSystemLevelInfoSerializer(system_level_list, many=True)
+        return PaginatedResponse(
+            data=serializer.data,
+            total=total,
+            page_offset=page_offset,
+            page_limit=page_limit
+        )
+
+    @extend_schema(
+        summary=_("Create a System Level "),
+        description=_("Create a System Level "),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID representation of Model Unique ID"))
+        ],
+        request=BIMSystemLevelRequestSerializer,
+        responses={200: BIMSystemLevelSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/system_levels', ],
+        methods=["POST"]
+    )
+    @handle_ws_error
+    def create(self, request: TokenRequest, client_id: str, project_id: str, model_id: str):
+        """
+        Create a System Level 
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id : Unique Model UUID
+        :return:
+        """
+        bslr = BIMSystemLevelRequestSerializer(data=request.data)
+        if not bslr.is_valid():
+            return Response(bslr.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        model_id_exists = BIMSystemLevel.list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            model_id=model_id
+        )
+        if not model_id_exists:
+            return Response(data=f"Invalid Model UUID :{model_id}", status=status.HTTP_400_BAD_REQUEST)
+        else:
+            system_level = BIMSystemLevel.create(
+                client_id=client_id,
+                token=request.token,
+                project_id=project_id,
+                user_id=request.user_id,
+                serialized_data=bslr.validated_data,
+                model_id=model_id
+            )
+            serializer = BIMSystemLevelSerializer(system_level)
+            return Response(data=serializer.data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        summary=_("Update a System Level "),
+        description=_("Update a System Level "),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID representation of Model Unique ID")),
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID representation of System Level Unique ID"))
+        ],
+        request=BIMSystemLevelRequestSerializer,
+        responses={200: BIMSystemLevelSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/system_levels', ],
+        methods=["PUT"]
+    )
+    @handle_ws_error
+    def update(self, request: TokenRequest, client_id: str, project_id: str, model_id: str, pk: str):
+        """
+        Update a System Level 
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id : Unique Model UUID
+        :param pk : Unique System Level UUID
+        :return:
+        """
+        bslr = BIMSystemLevelRequestSerializer(data=request.data)
+        if not bslr.is_valid():
+            return Response(bslr.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        model_id_exists = BIMSystemLevel.list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            model_id=model_id
+        )
+        if not model_id_exists:
+            return Response(data=f"Invalid Model UUID :{model_id}", status=status.HTTP_400_BAD_REQUEST)
+        else:
+            system_level = BIMSystemLevel.update(
+                client_id=client_id,
+                token=request.token,
+                project_id=project_id,
+                user_id=request.user_id,
+                serialized_data=bslr.validated_data,
+                model_id=model_id,
+                system_level_uuid=pk
+            )
+            serializer = BIMSystemLevelSerializer(system_level)
+            return Response(data=serializer.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary=_("Archive a System Level "),
+        description=_("Archive a System Level "),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID representation of Model Unique ID")),
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID representation of System Level Unique ID"))
+        ],
+        responses={200: BIMSystemLevelArchiveSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/system_levels', ],
+        methods=["DELETE"]
+    )
+    @handle_ws_error
+    def destroy(self, request: TokenRequest, client_id: str, project_id: str, model_id: str, pk: str):
+        """
+        Archive a System Level 
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id : Unique Model UUID
+        :param pk : Unique System Level UUID
+        :return:
+        """
+        archived_system_level = BIMSystemLevel.archive(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            model_id=model_id,
+            system_level_uuid=pk
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @extend_schema(
+        summary=_("Recover a System Level "),
+        description=_("Recover a System Level "),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID representation of Model Unique ID")),
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID representation of System Level Unique ID"))
+        ],
+        responses={200: BIMSystemLevelArchiveSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/system_levels', ],
+        methods=["PATCH"]
+    )
+    # using patch HTTP verb for the recovering of system level, internally it calls archiveSystemLevel
+    @handle_ws_error
+    def partial_update(self, request: TokenRequest, client_id: str, project_id: str, model_id: str, pk: str):
+        """
+        Recover a System Level 
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id : Unique Model UUID
+        :param pk : Unique System Level UUID
+        :return:
+        """
+        recovered_system_level = BIMSystemLevel.recover(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            model_id=model_id,
+            system_level_uuid=pk
+        )
+        serializer = BIMSystemLevelArchiveSerializer(recovered_system_level)
+        return Response(data=serializer.data, status=status.HTTP_200_OK)
+
+
+class BIMElementViewSet(PaginatedViewSet):
+    """
+    A ViewSet for BIM Element
+    """
+
+    @extend_schema(
+        summary=_("List Kairnial BIM elements"),
+        description=_("List Kairnial BIM elements on this project"),
+        parameters=project_parameters + pagination_parameters + [
+            BIMElementQuerySerializer,  # serializer fields are converted to parameters
+        ],
+        responses={200: BIMElementSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/elements', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, project_id: str, model_id: str, layer_id: str):
+        """
+        List BIM elements on a project
+        :param request:
+        :param client_id: Client ID
+        :param project_id: RGOC value of the project
+        :param model_id: ID of the model
+        :param layer_id: ID of the layer
+        :return:
+        """
+        beqs = BIMElementQuerySerializer(data=request.GET)
+        beqs.is_valid()
+        page_offset, page_limit = self.get_pagination(request=request)
+        total, layer_list, page_offset, page_limit = BIMElement.paginated_list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            layer_id=layer_id,
+            page_offset=page_offset,
+            page_limit=page_limit,
+            filters=beqs.validated_data,
+            items_key='items'
+        )
+        serializer = BIMElementSerializer(json.loads(layer_list), many=True)
+        return PaginatedResponse(
+            data=serializer.data,
+            total=total,
+            page_offset=page_offset,
+            page_limit=page_limit
+        )
+
+    @extend_schema(
+        summary=_("Delete BIM Elements"),
+        description=_("Delete an existing BIM Elements"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID of the Bim Element")),
+        ],
+        responses={204: OpenApiTypes.STR, 400: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/elements', ],
+        methods=["DELETE"]
+    )
+    @handle_ws_error
+    def destroy(self, request, client_id: str, project_id: str, pk: str, model_id: str, layer_id: str):
+        """
+        Archive Bim Elements
+        """
+        deleted = BIMElement.delete(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            element_id=pk
+        )
+        if deleted:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(_("Bim Elements could not be deleted"),
+                            status=status.HTTP_406_NOT_ACCEPTABLE)
+
+    @extend_schema(
+        summary=_("Get Kairnial BIM Layer Element Parameter Values"),
+        description=_("Get Kairnial BIM Layer Element Parameter Values on this project"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID Representation of Element ID"))
+        ],
+        responses={200: BIMParameterValueSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/elements', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    @action(methods=['GET'], detail=True, url_path='parameters', url_name='element_parameter_values')
+    def get_parameters(self, request: TokenRequest, pk: str, client_id: str, project_id: str, model_id: str,
+                       layer_id: str):
+        """
+        Get BIM Layer Element Parameter Values on a project
+        :param request:
+        :param client_id
+        :param project_id
+        :param model_id
+        :param layer_id
+        :param pk: Element UUID
+        :return:
+        """
+        parameter_values = BIMElement.get_parameters(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            element_id=pk,
+        )
+        serializer = BIMParameterValueSerializer(parameter_values, many=True)
+        return Response(
+            data=serializer.data,
+            status=status.HTTP_200_OK
+        )
+
+    @extend_schema(
+        summary=_("List Kairnial BIM elements for a layer"),
+        description=_("List Kairnial BIM elements for a layer"),
+        parameters=project_parameters + [
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("Unique ID Of The Parent")),
+            OpenApiParameter("model_id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_("Numeric model id")),
+            OpenApiParameter(name='layer_id', type=OpenApiTypes.INT, location='path',
+                             description=_("Numeric layer ID")),
+            BIMElementRequestSerializer
+        ],
+        responses={200: BIMElementResponseSerializer(many=True), 400: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim', ],
+        methods=["GET"],
+        operation_id='bim_models_layers_elements_by_id'
+    )
+    @handle_ws_error
+    def retrieve(self, request: TokenRequest, client_id: str, layer_id: int, model_id: int, pk: str,
+                 project_id: str):
+        """
+         List of BIM Elements for a Layer
+        :param request: Httprequest
+        :param client_id: Client ID token
+        :param project_id: RGOC ID of the Project
+        :param layer_id: Numeric Layer ID
+        :param model_id: Numeric Model ID
+        :param pk: Unique Parent Element ID
+        :return:
+        """
+        bers = BIMElementRequestSerializer(data=request.GET)
+        if not bers.is_valid():
+            return Response(bers.errors, content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        element = BIMElement.get_element_by_layer(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            serialized_data=bers.validated_data,
+            layer_id=layer_id,
+            model_id=model_id,
+            parent_uuid=pk
+        )
+        if element:
+            serializer = BIMElementResponseSerializer(element, many=True)
+            return Response(data=serializer.data, content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_200_OK)
+        return Response(_("Bim Element not Found"), status=status.HTTP_400_BAD_REQUEST)
+
+
+class BIMModelFilterViewSet(PaginatedViewSet):
+    """
+    A ViewSet for BIM Model Filters
+    """
+    parser_classes = (MultiPartParser,)
+
+    @extend_schema(
+        summary=_("Add Kairnial Bim Model Filter"),
+        description=_("Add Kairnial Bim Model Filter on this project"),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_("Numeric model id"))
+        ],
+        request=BIMModelFilterRequestSerializer,
+        responses={201: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/models', ],
+        methods=["POST"]
+    )
+    @handle_ws_error
+    def create(self, request: TokenRequest, client_id: str, project_id: str, model_id: int):
+        """
+        add bim model filter
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id: Numeric model ID
+        :return:
+        """
+        is_model_exist = BIMModelFilter.is_model_exist(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            model_id=model_id
+        )
+        if not is_model_exist:
+            return Response({'model_id': f"Model with ID {model_id} not found"},
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+        bmfrs = BIMModelFilterRequestSerializer(data=request.data)
+        if not bmfrs.is_valid():
+            return Response(bmfrs.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        BIMModelFilter.create(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            serialized_data=bmfrs.validated_data,
+            model_id=model_id
+        )
+        return Response(_('Model filter created successfully.'), status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        summary=_("List Kairnial Bim Model Filters"),
+        description=_("List of Kairnial Bim Model Filter on this project"),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_("Numeric model id"))
+        ],
+        responses={200: BIMModelFilterSerializer(many=True), 404: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/models', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, project_id: str, model_id: int):
+        """
+        list bim model filters
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id: Numeric model ID
+        :return:
+        """
+        is_model_exist = BIMModelFilter.is_model_exist(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            model_id=model_id
+        )
+        if not is_model_exist:
+            return Response({'model_id': f"Model with ID {model_id} not found."},
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+        response = BIMModelFilter.list(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            model_id=model_id
+        )
+        if response:
+            resp_ser = BIMModelFilterSerializer(response, many=True)
+            return Response(data=resp_ser.data, status=status.HTTP_200_OK)
+        else:
+            return Response(_('Filters not found.'), status=status.HTTP_404_NOT_FOUND)
+
+    @extend_schema(
+        summary=_("Delete Kairnial BIM Model Filter"),
+        description=_("Delete Kairnial existing BIM Model Filter"),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_("Numeric model id")),
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("Unique ID of the filter")),
+        ],
+        responses={204: OpenApiTypes.STR, 400: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/models', ],
+        methods=["DELETE"]
+    )
+    @handle_ws_error
+    def destroy(self, request, client_id: str, project_id: str, pk: str, model_id: int):
+        """
+        Archive Bim Layer
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id: Numeric model ID
+        :param pk: Unique Filter ID
+        :return:
+        """
+        is_model_exist = BIMModelFilter.is_model_exist(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            model_id=model_id
+        )
+        if not is_model_exist:
+            return Response({'model_id': f"Model with ID {model_id} not found."},
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+        deleted = BIMModelFilter.delete(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            model_id=model_id,
+            filter_id=pk
+        )
+        if deleted:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(_("Bim Model Filter could not be deleted"),
+                            status=status.HTTP_406_NOT_ACCEPTABLE)
+
+
+class BIMSettingsViewSet(PaginatedViewSet):
+    """
+    Viewset for BIM settings
+    """
+    parser_classes = (MultiPartParser,)
+
+    @extend_schema(
+        summary=_("Add Kairnial BIM Settings"),
+        description=_("Add Kairnial BIM Settings"),
+        parameters=project_parameters,
+        request=BIMSettingsRequestSerializer,
+        responses={201: OpenApiTypes.STR, 400: OpenApiTypes.OBJECT, 503: ServiceErrorSerializer},
+        tags=['bim/settings', ],
+        methods=["POST"]
+    )
+    @handle_ws_error
+    def create(self, request: TokenRequest, client_id: str, project_id: str, model_id: int):
+        """
+        Add Kairnial BIM Settings
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id: Numeric Model ID
+        :return:
+        """
+        bsrs = BIMSettingsRequestSerializer(data=request.data)
+        if not bsrs.is_valid():
+            return Response(bsrs.errors,
+                            content_type=JSON_CONTENT_TYPE,
+                            status=status.HTTP_400_BAD_REQUEST)
+        add_bim_settings = BIMSettings.create(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+            model_id=model_id,
+            serialized_data=bsrs.validated_data
+        )
+        # If setting is not added then backend sends an error object {'result': 'error', 'error': 'contact us'}.
+        # If setting is added then response is boolean true
+        if type(add_bim_settings) is dict and add_bim_settings.get('result') == 'error':
+            return Response(_("Unable to add BIM Settings"), status=status.HTTP_400_BAD_REQUEST)
+        return Response(data=_('BIM Settings added successfully'), status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        summary=_("List Kairnial BIM Settings"),
+        description=_("List Kairnial BIM Settings"),
+        parameters=project_parameters + [
+            OpenApiParameter("model_id", OpenApiTypes.INT, OpenApiParameter.PATH,
+                             description=_("Numeric Model ID")),
+            BIMSettingsQuerySerializer
+        ],
+        responses={200: BIMSettingsSerializer(many=True), 400: OpenApiTypes.OBJECT, 404: OpenApiTypes.STR,
+                   503: ServiceErrorSerializer},
+        tags=['bim/settings', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, project_id: str, model_id: int):
+        """
+        List BIM Settings
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param model_id: Numeric Model ID
+        :return:
+        """
+        bsqs = BIMSettingsQuerySerializer(data=request.GET)
+        if not bsqs.is_valid():
+            return Response(data=bsqs.errors, status=status.HTTP_400_BAD_REQUEST)
+        bim_settings = BIMSettings.list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            model_id=model_id,
+            serialized_data=bsqs.validated_data
+        )
+        # check if there are no settings available. In that case backend doesn't send list rather it sends an object
+        # of type {'result': 'error', 'error': 'contact us'}
+        if type(bim_settings) is dict and bim_settings.get('result') == 'error':
+            return Response(data=_('No BIM settings found'), status=status.HTTP_404_NOT_FOUND)
+
+        serializer = BIMSettingsSerializer(bim_settings, many=True)
+        return Response(
+            data=serializer.data,
+            status=status.HTTP_200_OK
+        )
+
+
+class BIMStatusViewSet(PaginatedViewSet):
+    """
+    Kairnial Archive BIM Status
+    """
+
+    @extend_schema(
+        summary=_('Kairnial Archive BIM Status By Element ID'),
+        description=_('Kairnial Archive BIM Status By Element Id'),
+        parameters=project_parameters + [
+            OpenApiParameter(name='element_id', type=OpenApiTypes.UUID, location='path',
+                             description=_("Unique Element ID")),
+            OpenApiParameter("id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("Unique Status ID")),
+        ],
+        responses={204: OpenApiTypes.STR, 406: OpenApiTypes.STR, 503: ServiceErrorSerializer},
+        tags=['bim/statuses', ],
+        methods=["DELETE"]
+    )
+    @handle_ws_error
+    def destroy(self, request: TokenRequest, project_id: str, client_id: str, pk: str, element_id: str):
+        """
+        Archive BIM Status by Element ID
+        """
+        archived = BIMElement.archive_status(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id,
+
+            element_id=element_id,
+            status_id=pk
+        )
+        if not archived == 'wrong parameters':
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(_("BIM Status could not be archived"),
+                            status=status.HTTP_406_NOT_ACCEPTABLE)
+
+    @extend_schema(
+        summary=_("List of All Kairnial BIM Status"),
+        description=_("List of All Kairnial BIM Status"),
+        parameters=project_parameters + [
+            OpenApiParameter("element_id", OpenApiTypes.UUID, OpenApiParameter.PATH,
+                             description=_("UUID representation of element ID"))
+        ],
+        responses={200: BIMStatusAllSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/statuses', ],
+        methods=["GET"],
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, element_id: str, client_id: str, project_id: str):
+        """
+        List All BIM Status on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :param element_id: Universal ID of Element ID
+        :return:
+        """
+        all_status = BIMElement.get_all_status(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id,
+            element_id=element_id,
+
+        )
+        serializer = BIMStatusAllSerializer(all_status)
+        return Response(
+            data=serializer.data,
+            status=status.HTTP_200_OK
+        )
+
+
+class BIMFieldDrawingViewSet(PaginatedViewSet):
+    """
+    Viewset for BIM Field Drawings
+    """
+    parser_classes = (MultiPartParser,)
+
+    @extend_schema(
+        summary=_("List Kairnial BIM Field Drawings"),
+        description=_("List Kairnial BIM Field Drawings"),
+        parameters=project_parameters,
+        responses={200: BIMFieldDrawingSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/field_drawings', ],
+        methods=["GET"]
+    )
+    @handle_ws_error
+    def list(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        List BIM Field Drawings
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        field_drawing_list = BIMFieldDrawing.list(
+            client_id=client_id,
+            token=request.token,
+            user_id=request.user_id,
+            project_id=project_id
+        )
+        resp_ser = BIMFieldDrawingSerializer(field_drawing_list)
+        return Response(resp_ser.data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        summary=_("List Kairnial BIM Advanced Field Drawings"),
+        description=_("List Kairnial BIM Advanced Field Drawings on this project"),
+        parameters=project_parameters,
+        responses={200: BIMAdvancedFieldDrawingSerializer, 503: ServiceErrorSerializer},
+        tags=['bim/field_drawings', ],
+        methods=["GET"],
+        operation_id='bim_field_drawings_advance_list'
+    )
+    @handle_ws_error
+    @action(methods=['GET'], detail=False, url_path='advanced', url_name='advance_field_drawings')
+    def get_advanced_field_drawings(self, request: TokenRequest, client_id: str, project_id: str):
+        """
+        List BIM Advanced Field Drawings on a project
+        :param request:
+        :param client_id: Client ID token
+        :param project_id: Project RGOC ID
+        :return:
+        """
+        advanced_field_drawing_list = BIMFieldDrawing.get_advanced_field_drawings(
+            client_id=client_id,
+            token=request.token,
+            project_id=project_id,
+            user_id=request.user_id
+        )
+        resp_ser = BIMAdvancedFieldDrawingSerializer(advanced_field_drawing_list)
+        return Response(resp_ser.data, status=status.HTTP_200_OK)
